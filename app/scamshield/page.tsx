@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseBrowserClient';
+import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
 import { fileToDataUrl, stripDataUrlPrefix } from '../../lib/fileHelpers';
 
 type ScamResult = {
@@ -38,13 +39,28 @@ export default function ScamShieldPage() {
   const [result, setResult] = useState<ScamResult | null>(null);
   const [status, setStatus] = useState('Paste a message or upload a proof image to begin.');
   const [busy, setBusy] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [savedCase, setSavedCase] = useState(false);
 
   const score = useMemo(() => {
     const value = Number(result?.riskScore ?? 0);
     return Number.isFinite(value) ? value : 0;
   }, [result?.riskScore]);
 
-  const level = result?.riskLevel ?? 'low';
+  const normalizedLevel = (() => {
+    const risk = Number(result?.riskScore ?? 0);
+    if (risk >= 75) return 'high';
+    if (risk >= 40) return 'medium';
+    return 'low';
+  })();
+
+  const badgeText = normalizedLevel === 'low' ? 'Safe' : normalizedLevel === 'medium' ? 'Suspicious' : 'High Risk';
+
+  const badgeStyles = normalizedLevel === 'low'
+    ? 'bg-emerald-400/15 text-emerald-100 border-emerald-300/20'
+    : normalizedLevel === 'medium'
+      ? 'bg-amber-400/15 text-amber-100 border-amber-300/20'
+      : 'bg-rose-400/15 text-rose-100 border-rose-300/20';
 
   async function handleScan() {
     if (!message.trim() && !file) {
@@ -65,9 +81,15 @@ export default function ScamShieldPage() {
         payload.fileName = file.name;
       }
 
+      const authHeaders = await getSupabaseAuthHeaders();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (authHeaders.Authorization) {
+        headers.Authorization = authHeaders.Authorization;
+      }
+
       const response = await fetch('/api/scamshield', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -78,8 +100,23 @@ export default function ScamShieldPage() {
 
       const parsed = data?.parsed ?? null;
       setResult(parsed);
-      setStatus('Saving report to scam_reports...');
+      setSavedCase(false);
+      setStatus('Scan complete. Review the explanation or report the case.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Unable to scan item.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
+  async function reportScam() {
+    if (!result) {
+      setStatus('Scan something first, then report it.');
+      return;
+    }
+
+    setReporting(true);
+    try {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id ?? null;
 
@@ -88,26 +125,46 @@ export default function ScamShieldPage() {
         input_type: tab,
         input_text: message.trim() || null,
         source_file_name: file?.name ?? null,
-        risk_score: parsed?.riskScore ?? null,
-        risk_level: parsed?.riskLevel ?? null,
-        verdict: parsed?.verdict ?? null,
-        summary: parsed?.summary ?? null,
-        reasons: parsed?.reasons ?? [],
-        recommended_action: parsed?.recommendedAction ?? null,
-        red_flags: parsed?.redFlags ?? [],
-        analysis_payload: parsed ?? data?.raw ?? {},
+        risk_score: result?.riskScore ?? null,
+        risk_level: normalizedLevel,
+        verdict: result?.verdict ?? null,
+        summary: result?.summary ?? null,
+        reasons: result?.reasons ?? [],
+        recommended_action: result?.recommendedAction ?? null,
+        red_flags: result?.redFlags ?? [],
+        analysis_payload: result ?? {},
       }]);
 
-      if (error) {
-        throw error;
-      }
-
+      if (error) throw error;
       setStatus('Report saved to scam_reports.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to scan item.');
+      setStatus(error instanceof Error ? error.message : 'Unable to report scam.');
     } finally {
-      setBusy(false);
+      setReporting(false);
     }
+  }
+
+  function saveCase() {
+    if (!result) {
+      setStatus('Scan something first, then save the case.');
+      return;
+    }
+
+    const casePayload = {
+      tab,
+      message,
+      fileName: file?.name ?? null,
+      result,
+      savedAt: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem('snapguard_saved_case', JSON.stringify(casePayload));
+    setSavedCase(true);
+    setStatus('Case saved locally for later review.');
+  }
+
+  function contactBank() {
+    window.open('https://www.bnm.gov.my', '_blank', 'noopener,noreferrer');
   }
 
   return (
@@ -174,7 +231,7 @@ export default function ScamShieldPage() {
               <Card className="border border-white/10 bg-white/5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.3em] text-white/50">Risk</p>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeStyles(level)}`}>{String(level)}</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeStyles}`}>{badgeText}</span>
                 </div>
                 <div className="mt-4 flex items-end gap-4">
                   <div className="text-5xl font-semibold">{score}</div>
@@ -184,17 +241,23 @@ export default function ScamShieldPage() {
               </Card>
 
               <Card className="border border-white/10 bg-white/5">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Reasons</p>
-                <div className="mt-3 space-y-2 text-sm text-white/75">
+                <p className="text-xs uppercase tracking-[0.3em] text-white/50">AI explanation</p>
+                <p className="mt-3 text-sm leading-7 text-white/75">{result?.summary ?? 'The scanner will explain the red flags here.'}</p>
+                <div className="mt-4 space-y-2 text-sm text-white/75">
                   {(result?.reasons?.length ?? 0) > 0 ? result?.reasons?.map((reason) => (
                     <div key={reason} className="rounded-xl bg-black/20 px-3 py-2">{reason}</div>
-                  )) : <p className="text-white/45">The scanner will explain the red flags here.</p>}
+                  )) : null}
                 </div>
               </Card>
 
               <Card className="border border-white/10 bg-white/5">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Recommended action</p>
-                <p className="mt-3 text-sm text-white/75">{result?.recommendedAction ?? 'No recommendation yet.'}</p>
+                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Actions</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button onClick={reportScam} disabled={reporting}>{reporting ? 'Reporting...' : 'Report Scam'}</Button>
+                  <Button variant="secondary" onClick={contactBank}>Contact Bank</Button>
+                  <Button variant="secondary" onClick={saveCase}>{savedCase ? 'Case Saved' : 'Save Case'}</Button>
+                </div>
+                <p className="mt-4 text-sm text-white/75">{result?.recommendedAction ?? 'No recommendation yet.'}</p>
               </Card>
             </div>
           </div>

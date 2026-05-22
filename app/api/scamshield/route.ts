@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 type ScamShieldPayload = {
   text?: string;
@@ -25,9 +26,34 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing payload' }, { status: 400 });
   }
 
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const key = process.env.GEMINI_KEY_SCAMSHIELD;
   if (!key) {
     return NextResponse.json({ error: 'ScamShield API key not configured' }, { status: 500 });
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json({ error: 'Supabase config missing' }, { status: 500 });
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: {
+      headers: {
+        Authorization: authHeader,
+      },
+    },
+  });
+
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const parts: Array<Record<string, unknown>> = [];

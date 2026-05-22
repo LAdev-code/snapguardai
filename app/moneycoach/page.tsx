@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseBrowserClient';
 
 const monthlyData = [
   { label: 'Food', value: 78 },
@@ -56,12 +56,22 @@ export default function MoneyCoachPage() {
   const [expenses, setExpenses] = useState(2780);
   const [notes, setNotes] = useState('Keep discretionary spending under control and raise savings first.');
   const [status, setStatus] = useState('Ready to save a financial health snapshot.');
+  const [saving, setSaving] = useState(false);
 
   const savingsRate = useMemo(() => Math.max(0, Math.round(((income - expenses) / income) * 100)), [income, expenses]);
   const topCategory = useMemo(() => monthlyData.slice().sort((a, b) => b.value - a.value)[0], []);
+  const estimatedSavings = Math.max(0, Math.round(income - expenses));
+  const persona = topCategory.label === 'Food' ? '🍜 High Food Spender' : topCategory.label === 'Shopping' ? '⚠️ Impulse Buyer Risk' : '📊 Balanced Builder';
+
+  const weeklyFeed = [
+    'Food spending is running above your normal baseline.',
+    'You have room to increase your savings by 8% this week.',
+    'Small recurring charges are affecting your score more than one-off expenses.',
+  ];
 
   async function saveSnapshot() {
     setStatus('Saving financial health record...');
+    setSaving(true);
 
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -92,6 +102,8 @@ export default function MoneyCoachPage() {
       setStatus('Financial health saved to financial_health.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to save snapshot.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -113,6 +125,7 @@ export default function MoneyCoachPage() {
                   <p className="text-sm text-white/60">Savings rate: {savingsRate}%</p>
                   <p className="text-sm text-white/60">Top category: {topCategory.label}</p>
                 </div>
+                <div className="inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80">{persona}</div>
                 <div className="flex w-full gap-3">
                   <Button className="flex-1" onClick={() => setScore((value) => Math.min(100, value + 3))}>Improve score</Button>
                   <Button className="flex-1" variant="secondary" onClick={() => setScore((value) => Math.max(0, value - 3))}>Stress test</Button>
@@ -121,6 +134,24 @@ export default function MoneyCoachPage() {
             </Card>
 
             <div className="space-y-6">
+              <Card className="border border-white/10 bg-white/5">
+                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Key stats</p>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-3xl bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.28em] text-white/45">Total spent</p>
+                    <div className="mt-3 text-2xl font-semibold">${expenses.toLocaleString()}</div>
+                  </div>
+                  <div className="rounded-3xl bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.28em] text-white/45">Top category</p>
+                    <div className="mt-3 text-2xl font-semibold">{topCategory.label}</div>
+                  </div>
+                  <div className="rounded-3xl bg-black/20 p-4">
+                    <p className="text-xs uppercase tracking-[0.28em] text-white/45">Estimated savings</p>
+                    <div className="mt-3 text-2xl font-semibold">${estimatedSavings.toLocaleString()}</div>
+                  </div>
+                </div>
+              </Card>
+
               <Card className="border border-white/10 bg-white/5">
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="block">
@@ -156,12 +187,25 @@ export default function MoneyCoachPage() {
               </Card>
 
               <Card className="border border-white/10 bg-white/5">
+                <p className="text-xs uppercase tracking-[0.3em] text-white/50">AI weekly report</p>
+                <div className="mt-4 space-y-4 border-l border-white/10 pl-4">
+                  {weeklyFeed.map((item, index) => (
+                    <div key={item} className="relative">
+                      <span className="absolute -left-[1.3rem] top-1.5 h-2.5 w-2.5 rounded-full bg-sky-300" />
+                      <p className="text-sm text-white/75">{item}</p>
+                      {index < weeklyFeed.length - 1 ? <div className="mt-4" /> : null}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              <Card className="border border-white/10 bg-white/5">
                 <label className="block">
                   <span className="mb-2 block text-xs uppercase tracking-[0.3em] text-white/50">Coach note</span>
                   <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm outline-none" />
                 </label>
                 <div className="mt-4 flex flex-wrap gap-3">
-                  <Button onClick={saveSnapshot}>Save snapshot</Button>
+                  <Button onClick={saveSnapshot} disabled={saving}>{saving ? 'Saving...' : 'Save snapshot'}</Button>
                   <Button variant="secondary" onClick={() => setStatus('Ready to save a financial health snapshot.')}>Reset status</Button>
                 </div>
                 <p className="mt-3 text-sm text-white/60">{status}</p>
