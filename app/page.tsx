@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: "Protect Your Money and Understand Spending",
@@ -33,24 +34,24 @@ export default function Page() {
           </div>
 
           <div id="features" className="mt-10 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <Link href="/snapsort" className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur hover:border-white/20 hover:bg-white/8">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-400/15 text-xl">🧾</div>
               <p className="mt-4 text-sm text-white/55">SnapSortAI</p>
               <p className="mt-2 text-lg font-semibold">Receipt parsing</p>
               <p className="mt-2 text-sm text-white/65">Upload receipts, extract merchant data, and save them to your dashboard.</p>
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            </Link>
+            <Link href="/scamshield" className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur hover:border-white/20 hover:bg-white/8">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-400/15 text-xl">🛡️</div>
               <p className="mt-4 text-sm text-white/55">ScamShield</p>
               <p className="mt-2 text-lg font-semibold">Risk detection</p>
               <p className="mt-2 text-sm text-white/65">Scan messages or payment proof and get a clear safety verdict.</p>
-            </div>
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            </Link>
+            <Link href="/moneycoach" className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur hover:border-white/20 hover:bg-white/8">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-400/15 text-xl">📈</div>
               <p className="mt-4 text-sm text-white/55">Money Coach</p>
               <p className="mt-2 text-lg font-semibold">Health tracking</p>
               <p className="mt-2 text-sm text-white/65">See your score, savings, and behavioral insights over time.</p>
-            </div>
+            </Link>
           </div>
 
           <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur">
