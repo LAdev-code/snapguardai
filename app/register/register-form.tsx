@@ -15,6 +15,7 @@ export default function RegisterForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const nextPath = searchParams.get('next') || '/dashboard';
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +31,7 @@ export default function RegisterForm() {
     }
 
     setMessage('Check your email to confirm your account, then sign in.');
-    router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+    setShowConfirmModal(true);
   }
 
   return (
@@ -59,6 +60,32 @@ export default function RegisterForm() {
         </form>
         {error && <div className="mt-3 text-sm text-red-400">{error}</div>}
         {message && <div className="mt-3 text-sm text-emerald-400">{message}</div>}
+        {showConfirmModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowConfirmModal(false)} />
+            <div className="relative z-10 w-full max-w-md rounded-2xl bg-slate-950 p-6 text-white">
+              <h2 className="text-lg font-semibold">Confirm your email</h2>
+              <p className="mt-3 text-sm text-white/75">We sent a confirmation email to <strong>{email}</strong>. Click the link in the email to verify your account.</p>
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+                  }}
+                  className="flex-1 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950"
+                >
+                  Go to sign in
+                </button>
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex-1 rounded-full border border-white/10 px-4 py-2 text-sm text-white/80"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         <p className="text-sm mt-4">Have an account? <Link href={`/login?next=${encodeURIComponent(nextPath)}`} className="underline">Sign in</Link></p>
       </div>
     </main>

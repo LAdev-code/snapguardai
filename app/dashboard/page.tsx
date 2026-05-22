@@ -1,10 +1,14 @@
+"use client";
+
 import Link from 'next/link';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
+import { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabaseBrowserClient';
 
-const monthlySpending = 2780;
-const financialHealthScore = 72;
+const monthlySpendingDefault = 2780;
+const financialHealthScoreDefault = 72;
 
 const quickActions = [
   { label: 'Scan Receipt', href: '/snapsort', tone: 'bg-sky-400/15 text-sky-100' },
@@ -13,6 +17,45 @@ const quickActions = [
 ];
 
 export default function DashboardPage() {
+  const [monthlySpending, setMonthlySpending] = useState<number>(monthlySpendingDefault);
+  const [financialHealthScore, setFinancialHealthScore] = useState<number>(financialHealthScoreDefault);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const { data: user } = await supabase.auth.getUser();
+        if (!user.user) return;
+
+        // Sum receipts total_amount for this user
+        const { data: receipts, error: receiptsErr } = await supabase
+          .from('receipts_data')
+          .select('total_amount')
+          .eq('user_id', user.user.id);
+
+        if (!receiptsErr && receipts) {
+          const total = receipts.reduce((sum, r: any) => sum + (Number(r.total_amount) || 0), 0);
+          setMonthlySpending(Math.round(total));
+        }
+
+        // Get latest financial_health snapshot
+        const { data: fh, error: fhErr } = await supabase
+          .from('financial_health')
+          .select('score')
+          .eq('user_id', user.user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!fhErr && fh && fh.length > 0) {
+          setFinancialHealthScore(Number((fh[0] as any).score) || 0);
+        }
+      } catch (e) {
+        // silent fail; keep defaults
+      }
+    }
+
+    loadData();
+  }, []);
+
   return (
     <AuthGuard>
       <main className="min-h-screen bg-[linear-gradient(180deg,_rgba(7,10,18,1),_rgba(11,15,24,1))] text-white">
