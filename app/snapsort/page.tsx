@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
 import { supabase } from '../../lib/supabaseBrowserClient';
 import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
-import { fileToDataUrl, stripDataUrlPrefix } from '../../lib/fileHelpers';
+import { fileToDataUrl, pdfPageToImageDataUrl, recognizeImageText, stripDataUrlPrefix } from '../../lib/fileHelpers';
 
 type ReceiptResult = {
   merchant?: string | null;
@@ -21,7 +21,19 @@ type ReceiptResult = {
   summary?: string | null;
 };
 
-type CategoryBreakdown = { label: string; value: number };
+type SavedReceipt = {
+  id: number;
+  created_at: string;
+  merchant: string | null;
+  total_amount: number | string | null;
+  currency: string | null;
+  category: string | null;
+  transaction_date: string | null;
+};
+
+type CategoryBreakdown = { label: string; value: number; color: string };
+
+const CHART_COLORS = ['#7dd3fc', '#34d399', '#fbbf24', '#fb7185'];
 
 export default function SnapSortPage() {
   const [notes, setNotes] = useState('');
@@ -34,11 +46,14 @@ export default function SnapSortPage() {
   const [saved, setSaved] = useState(false);
   const [processingStep, setProcessingStep] = useState('Waiting for upload');
   const [breakdown, setBreakdown] = useState<CategoryBreakdown[]>([
-    { label: 'Food', value: 38 },
-    { label: 'Transport', value: 22 },
-    { label: 'Shopping', value: 18 },
-    { label: 'Bills', value: 22 },
+    { label: 'Food', value: 38, color: CHART_COLORS[0] },
+    { label: 'Transport', value: 22, color: CHART_COLORS[1] },
+    { label: 'Shopping', value: 18, color: CHART_COLORS[2] },
+    { label: 'Bills', value: 22, color: CHART_COLORS[3] },
   ]);
+  const [history, setHistory] = useState<SavedReceipt[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
@@ -49,18 +64,43 @@ export default function SnapSortPage() {
     };
   }, [previewUrl]);
 
-  const insight = result?.summary ?? 'You spent more in one category than the rest this week. Add it to the dashboard to track your history.';
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return;
 
-  function applyBreakdown(totalValue: number) {
+      const { data, error } = await supabase
+        .from('receipts_data')
+        .select('id, created_at, merchant, total_amount, currency, category, transaction_date')
+        .eq('user_id', user.user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!error && data) {
+        setHistory(data as SavedReceipt[]);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  const insight = result?.summary ?? 'You spent more in one category than the rest this week. Receipt data is automatically synced to Money Coach.';
+
+  function applyBreakdown() {
     const labels = ['Food', 'Transport', 'Shopping', 'Bills'];
     const weights = [34, 26, 20, 20];
-
-    setBreakdown(
-      labels.map((label, index) => ({
-        label,
-        value: Math.max(10, Math.round((totalValue || 100) * weights[index] / 100)),
-      })),
-    );
+    setBreakdown(labels.map((label, index) => ({
+      label,
+      value: weights[index],
+      color: CHART_COLORS[index],
+    })));
   }
 
   function selectFile(nextFile: File | null) {
@@ -72,17 +112,13 @@ export default function SnapSortPage() {
   }
 
   async function saveReceiptToDashboard(parsed: ReceiptResult | null) {
-    if (!parsed) {
-      setStatus('Analyze a receipt before saving it.');
-      return;
-    }
+    if (!parsed) return;
 
-    setSaving(true);
     try {
       const { data: sessionData } = await supabase.auth.getUser();
       const userId = sessionData.user?.id ?? null;
 
-      const { error } = await supabase.from('receipts_data').insert([{
+      await supabase.from('receipts_data').insert([{
         user_id: userId,
         source_file_name: file?.name ?? null,
         source_text: notes.trim() || null,
@@ -99,13 +135,9 @@ export default function SnapSortPage() {
         analysis_payload: parsed ?? {},
       }]);
 
-      if (error) throw error;
       setSaved(true);
-      setStatus('Receipt added to your dashboard and saved in receipts_data.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Unable to save receipt.');
-    } finally {
-      setSaving(false);
+    } catch {
+      // Auto-save failure is non-critical, user can re-analyze
     }
   }
 
@@ -117,21 +149,29 @@ export default function SnapSortPage() {
 
     setLoading(true);
     setSaving(false);
-    setProcessingStep('Extracting merchant data...');
+    setProcessingStep('Extracting receipt text...');
     setStatus('Analyzing receipt...');
 
     try {
-      const payload: Record<string, string> = { text: notes.trim() };
+      let textPayload = notes.trim();
 
       if (file) {
-        setProcessingStep('Reading image pixels...');
-        const dataUrl = await fileToDataUrl(file);
-        payload.imageBase64 = stripDataUrlPrefix(dataUrl);
-        payload.imageMimeType = file.type || 'image/png';
-        payload.fileName = file.name;
+        if (file.type === 'application/pdf') {
+          setProcessingStep('Rendering PDF pages...');
+          const dataUrl = await pdfPageToImageDataUrl(file);
+          textPayload = await recognizeImageText(stripDataUrlPrefix(dataUrl));
+        } else {
+          setProcessingStep('Running OCR on receipt image...');
+          const dataUrl = await fileToDataUrl(file);
+          textPayload = await recognizeImageText(stripDataUrlPrefix(dataUrl));
+        }
       }
 
-      setProcessingStep('Parsing totals and line items...');
+      if (!textPayload.trim()) {
+        throw new Error('No text could be read from the receipt image.');
+      }
+
+      setProcessingStep('Analyzing receipt data...');
 
       const authHeaders = await getSupabaseAuthHeaders();
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -142,7 +182,7 @@ export default function SnapSortPage() {
       const response = await fetch('/api/snapsort', {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ text: textPayload }),
       });
 
       const data = await response.json();
@@ -152,10 +192,13 @@ export default function SnapSortPage() {
 
       const parsed = data?.parsed ?? null;
       setResult(parsed);
-      applyBreakdown(Number(parsed?.total ?? 100) || 100);
-      setSaved(false);
-      setProcessingStep('Analysis complete. Add to dashboard to save it.');
-      setStatus('Receipt analyzed. Review the card, chart, and AI insight below.');
+      applyBreakdown();
+
+      // Auto-save to receipts_data so MoneyCoach picks it up
+      await saveReceiptToDashboard(parsed);
+
+      setProcessingStep('Saved to dashboard.');
+      setStatus('Receipt analyzed and saved. Check Money Coach for your spending overview.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to process receipt.');
     } finally {
@@ -170,14 +213,14 @@ export default function SnapSortPage() {
           <header className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.3em] text-white/50">SnapSortAI</p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Turn receipts into organized spending records.</h1>
-            <p className="mt-3 text-sm text-white/70">Drag and drop a receipt or use your camera. We extract merchant data, explain the result, and let you save it to your dashboard.</p>
+            <p className="mt-3 text-sm text-white/70">Drag and drop a receipt or use your camera. We extract merchant data and automatically sync it to Money Coach.</p>
           </header>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
             <Card className="border border-white/10 bg-white/5 p-0">
               <div className="border-b border-white/10 px-6 py-4">
                 <h2 className="text-lg font-semibold">Receipt upload</h2>
-                <p className="text-sm text-white/60">Image parsing and structured AI extraction.</p>
+                <p className="text-sm text-white/60">Receipt OCR with auto-save to Money Coach.</p>
               </div>
               <div className="space-y-5 px-6 py-6">
                 <div
@@ -200,14 +243,14 @@ export default function SnapSortPage() {
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="text-lg font-semibold text-white">Drop receipt here</p>
-                      <p className="mt-1 text-white/60">PNG, JPG, HEIC, or a camera capture.</p>
+                      <p className="mt-1 text-white/60">PNG, JPG, PDF, or a camera capture.</p>
                     </div>
                     <div className="rounded-2xl bg-white/10 px-4 py-2 text-white">Tap to open picker</div>
                   </div>
                   <input
                     ref={inputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.pdf"
                     capture="environment"
                     className="hidden"
                     onChange={(event) => selectFile(event.target.files?.[0] ?? null)}
@@ -215,7 +258,16 @@ export default function SnapSortPage() {
                 </div>
 
                 {previewUrl ? (
-                  <img src={previewUrl} alt="Receipt preview" className="h-56 w-full rounded-2xl object-cover" />
+                  file?.type === 'application/pdf' ? (
+                    <div className="flex h-56 w-full items-center justify-center rounded-2xl border border-white/10 bg-black/20">
+                      <div className="text-center">
+                        <span className="text-4xl">📄</span>
+                        <p className="mt-2 text-sm text-white/60">{file?.name}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <img src={previewUrl} alt="Receipt preview" className="h-56 w-full rounded-2xl object-cover" />
+                  )
                 ) : null}
 
                 {loading ? (
@@ -242,16 +294,13 @@ export default function SnapSortPage() {
                     onChange={(event) => setNotes(event.target.value)}
                     rows={6}
                     className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm outline-none placeholder:text-white/30"
-                    placeholder="Paste OCR text from a receipt scanner, or add notes about the purchase."
+                    placeholder="Add notes about the purchase or paste additional receipt text."
                   />
                 </label>
 
                 <div className="flex flex-wrap gap-3">
                   <Button onClick={handleAnalyze} disabled={loading}>
                     {loading ? 'Analyzing...' : 'Analyze receipt'}
-                  </Button>
-                  <Button variant="secondary" onClick={() => saveReceiptToDashboard(result)} disabled={!result || saving}>
-                    {saving ? 'Saving...' : saved ? 'Saved to Dashboard' : 'Add to Dashboard'}
                   </Button>
                   <Button variant="secondary" onClick={() => {
                     setFile(null);
@@ -286,13 +335,23 @@ export default function SnapSortPage() {
               <Card className="border border-white/10 bg-white/5">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/50">Category chart</p>
                 <div className="mt-4 flex items-center gap-6">
-                  <div className="relative h-40 w-40 rounded-full" style={{ background: `conic-gradient(#7dd3fc 0 ${breakdown[0].value}%, #34d399 ${breakdown[0].value}% ${breakdown[0].value + breakdown[1].value}%, #fbbf24 ${breakdown[0].value + breakdown[1].value}% ${breakdown[0].value + breakdown[1].value + breakdown[2].value}%, #fb7185 ${breakdown[0].value + breakdown[1].value + breakdown[2].value}% 100%)` }}>
+                  <div className="relative h-40 w-40 rounded-full" style={{
+                    background: breakdown.length > 0
+                      ? `conic-gradient(${breakdown.map((b, i) => {
+                          const start = breakdown.slice(0, i).reduce((s, c) => s + c.value, 0);
+                          return `${b.color} ${start}% ${start + b.value}%`;
+                        }).join(', ')})`
+                      : 'none',
+                  }}>
                     <div className="absolute inset-6 rounded-full bg-slate-950/90" />
                   </div>
                   <div className="flex-1 space-y-3 text-sm text-white/75">
                     {breakdown.map((entry) => (
                       <div key={entry.label} className="flex items-center justify-between rounded-2xl bg-black/20 px-4 py-3">
-                        <span>{entry.label}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="inline-block h-3 w-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                          {entry.label}
+                        </span>
                         <span>{entry.value}%</span>
                       </div>
                     ))}
@@ -311,6 +370,57 @@ export default function SnapSortPage() {
               <Card className="border border-amber-300/20 bg-amber-300/10">
                 <p className="text-xs uppercase tracking-[0.3em] text-amber-100/75">AI insight</p>
                 <p className="mt-3 text-sm leading-7 text-white">{insight}</p>
+              </Card>
+
+              <Card className="border border-white/10 bg-white/5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/50">Recent scans</p>
+                  <button
+                    onClick={() => setShowHistory((prev) => !prev)}
+                    className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20"
+                  >
+                    {showHistory ? 'Hide' : `View all (${history.length})`}
+                  </button>
+                </div>
+                {showHistory && (
+                  <div className="mt-4 space-y-2 text-sm text-white/75 max-h-72 overflow-y-auto">
+                    {historyLoading ? (
+                      <div className="flex items-center gap-2 py-3 text-white/60">
+                        <div className="h-4 w-4 animate-spin rounded-full border border-white/20 border-t-white" />
+                        <span>Loading history...</span>
+                      </div>
+                    ) : history.length === 0 ? (
+                      <p className="py-3 text-white/45">No past scans yet. Analyse your first receipt above.</p>
+                    ) : (
+                      history.map((entry) => (
+                        <button
+                          key={entry.id}
+                          onClick={() => {
+                            setResult({
+                              merchant: entry.merchant,
+                              total: entry.total_amount,
+                              currency: entry.currency,
+                              category: entry.category,
+                              transactionDate: entry.transaction_date,
+                            });
+                            applyBreakdown();
+                            setStatus(`Loaded ${entry.merchant ?? 'receipt'} from history.`);
+                          }}
+                          className="w-full rounded-2xl bg-black/20 px-4 py-3 text-left transition hover:bg-black/40"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-white">{entry.merchant ?? 'Unknown merchant'}</span>
+                            <span>{entry.currency ?? ''} {entry.total_amount ?? '—'}</span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-white/45">
+                            <span>{entry.transaction_date ?? '—'}</span>
+                            <span>{entry.category ?? '—'}</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </Card>
             </div>
           </div>

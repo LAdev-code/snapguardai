@@ -6,7 +6,7 @@ import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
 import { supabase } from '../../lib/supabaseBrowserClient';
 import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
-import { fileToDataUrl, stripDataUrlPrefix } from '../../lib/fileHelpers';
+import { fileToDataUrl, recognizeImageText, stripDataUrlPrefix } from '../../lib/fileHelpers';
 
 type ScamResult = {
   riskScore?: number | string | null;
@@ -18,19 +18,6 @@ type ScamResult = {
   redFlags?: string[];
 };
 
-function badgeStyles(level?: string | null) {
-  switch (level) {
-    case 'critical':
-      return 'bg-rose-500/20 text-rose-200 border-rose-400/30';
-    case 'high':
-      return 'bg-orange-500/20 text-orange-200 border-orange-400/30';
-    case 'medium':
-      return 'bg-amber-500/20 text-amber-100 border-amber-400/30';
-    default:
-      return 'bg-emerald-500/20 text-emerald-100 border-emerald-400/30';
-  }
-}
-
 export default function ScamShieldPage() {
   const [tab, setTab] = useState<'message' | 'image'>('message');
   const [message, setMessage] = useState('');
@@ -41,6 +28,9 @@ export default function ScamShieldPage() {
   const [busy, setBusy] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [savedCase, setSavedCase] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [communityCount, setCommunityCount] = useState<number | null>(null);
+  const [loadingIntel, setLoadingIntel] = useState(false);
 
   const score = useMemo(() => {
     const value = Number(result?.riskScore ?? 0);
@@ -56,11 +46,53 @@ export default function ScamShieldPage() {
 
   const badgeText = normalizedLevel === 'low' ? 'Safe' : normalizedLevel === 'medium' ? 'Suspicious' : 'High Risk';
 
-  const badgeStyles = normalizedLevel === 'low'
+  const badgeStyleClasses = normalizedLevel === 'low'
     ? 'bg-emerald-400/15 text-emerald-100 border-emerald-300/20'
     : normalizedLevel === 'medium'
       ? 'bg-amber-400/15 text-amber-100 border-amber-300/20'
       : 'bg-rose-400/15 text-rose-100 border-rose-300/20';
+
+  function toggleSpeech() {
+    if (typeof window === 'undefined') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    if (speaking) {
+      synth.cancel();
+      setSpeaking(false);
+      return;
+    }
+
+    const textToSpeak = `ScamShield Safety Verdict: ${result?.verdict ?? 'No verdict yet'}. Risk Score: ${score} out of 100, which is a ${badgeText} threat level. Safety Summary: ${result?.summary ?? 'No summary yet'}. Recommended Action: ${result?.recommendedAction ?? ''}`;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.rate = 0.85; // slower rate for tech-safety/elderly readability
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+
+    setSpeaking(true);
+    synth.speak(utterance);
+  }
+
+  async function fetchCommunityStats(level: string) {
+    setLoadingIntel(true);
+    try {
+      const { count, error } = await supabase
+        .from('scam_reports')
+        .select('*', { count: 'exact', head: true })
+        .eq('risk_level', level);
+
+      if (!error && count !== null) {
+        setCommunityCount(count);
+      } else {
+        setCommunityCount(0);
+      }
+    } catch {
+      setCommunityCount(0);
+    } finally {
+      setLoadingIntel(false);
+    }
+  }
 
   async function handleScan() {
     if (!message.trim() && !file) {
@@ -68,18 +100,26 @@ export default function ScamShieldPage() {
       return;
     }
 
+    if (typeof window !== 'undefined') {
+      window.speechSynthesis?.cancel();
+      setSpeaking(false);
+    }
+
     setBusy(true);
     setStatus('Scanning...');
+    setCommunityCount(null);
 
     try {
-      const payload: Record<string, string> = { text: message.trim() };
+      let textPayload = message.trim();
 
       if (file) {
+        setStatus('Running OCR on the image...');
         const dataUrl = await fileToDataUrl(file);
-        payload.imageBase64 = stripDataUrlPrefix(dataUrl);
-        payload.imageMimeType = file.type || 'image/png';
-        payload.fileName = file.name;
+        const ocrText = await recognizeImageText(stripDataUrlPrefix(dataUrl));
+        textPayload = textPayload ? `${textPayload}\n\n${ocrText}` : ocrText;
       }
+
+      const payload: Record<string, string> = { text: textPayload };
 
       const authHeaders = await getSupabaseAuthHeaders();
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
@@ -102,6 +142,11 @@ export default function ScamShieldPage() {
       setResult(parsed);
       setSavedCase(false);
       setStatus('Scan complete. Review the explanation or report the case.');
+
+      if (parsed) {
+        const level = Number(parsed.riskScore ?? 0) >= 75 ? 'high' : Number(parsed.riskScore ?? 0) >= 40 ? 'medium' : 'low';
+        fetchCommunityStats(level);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to scan item.');
     } finally {
@@ -137,6 +182,7 @@ export default function ScamShieldPage() {
 
       if (error) throw error;
       setStatus('Report saved to scam_reports.');
+      fetchCommunityStats(normalizedLevel);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Unable to report scam.');
     } finally {
@@ -220,7 +266,18 @@ export default function ScamShieldPage() {
 
                 <div className="flex flex-wrap gap-3">
                   <Button onClick={handleScan} disabled={busy}>{busy ? 'Scanning...' : 'Scan now'}</Button>
-                  <Button variant="secondary" onClick={() => { setMessage(''); setFile(null); setPreview(''); setResult(null); setStatus('Cleared.'); }}>Reset</Button>
+                  <Button variant="secondary" onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.speechSynthesis?.cancel();
+                    }
+                    setSpeaking(false);
+                    setMessage('');
+                    setFile(null);
+                    setPreview('');
+                    setResult(null);
+                    setCommunityCount(null);
+                    setStatus('Cleared.');
+                  }}>Reset</Button>
                 </div>
 
                 <p className="text-sm text-white/60">{status}</p>
@@ -231,7 +288,7 @@ export default function ScamShieldPage() {
               <Card className="border border-white/10 bg-white/5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.3em] text-white/50">Risk</p>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeStyles}`}>{badgeText}</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeStyleClasses}`}>{badgeText}</span>
                 </div>
                 <div className="mt-4 flex items-end gap-4">
                   <div className="text-5xl font-semibold">{score}</div>
@@ -240,8 +297,58 @@ export default function ScamShieldPage() {
                 <p className="mt-4 text-sm text-white/75">{result?.verdict ?? 'Waiting for analysis.'}</p>
               </Card>
 
+              {result && (
+                <Card className="border border-sky-500/20 bg-sky-500/5 backdrop-blur-md relative overflow-hidden transition-all duration-300">
+                  <div className="absolute top-0 right-0 p-3 opacity-10 text-4xl">🌐</div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-sky-300/70">Community Threat Intel</p>
+                  {loadingIntel ? (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-white/60">
+                      <div className="h-4 w-4 animate-spin rounded-full border border-sky-300/30 border-t-sky-300" />
+                      <span>Querying community database...</span>
+                    </div>
+                  ) : (
+                    <div className="mt-3">
+                      {communityCount !== null && communityCount > 0 ? (
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-bold text-sky-300">{communityCount}</span>
+                            <span className="text-sm text-sky-200/80">similar cases reported</span>
+                          </div>
+                          <p className="mt-2 text-xs text-sky-200/60 leading-normal">
+                            This scam pattern is currently active. Avoid sharing OTPs, banking credentials, or making any transfers.
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-base font-semibold text-emerald-400">First Threat Report</span>
+                          </div>
+                          <p className="mt-2 text-xs text-emerald-300/70 leading-normal">
+                            You are the first to scan this pattern! Reporting it will instantly add it to the community database to protect other users.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              )}
+
               <Card className="border border-white/10 bg-white/5">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/50">AI explanation</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.3em] text-white/50">AI explanation</p>
+                  {result && (
+                    <button
+                      onClick={toggleSpeech}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition border font-semibold ${
+                        speaking
+                          ? 'bg-rose-500/20 text-rose-200 border-rose-400/30 animate-pulse'
+                          : 'bg-white/10 text-white/70 border-white/10 hover:bg-white/20'
+                      }`}
+                    >
+                      <span>{speaking ? '⏹ Stop Voice' : '🔊 Listen Warning'}</span>
+                    </button>
+                  )}
+                </div>
                 <p className="mt-3 text-sm leading-7 text-white/75">{result?.summary ?? 'The scanner will explain the red flags here.'}</p>
                 <div className="mt-4 space-y-2 text-sm text-white/75">
                   {(result?.reasons?.length ?? 0) > 0 ? result?.reasons?.map((reason) => (

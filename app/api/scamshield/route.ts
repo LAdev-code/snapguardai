@@ -57,14 +57,31 @@ export async function POST(req: Request) {
   }
 
   const parts: Array<Record<string, unknown>> = [];
-  parts.push({ text: `Analyze this message or payment proof for scam indicators. Return strict JSON with keys: riskScore (0-100), riskLevel (low|medium|high|critical), verdict, summary, reasons (array of strings), recommendedAction, redFlags (array of strings). Message text: ${body.text ?? ''}` });
+  parts.push({ text: `You are SnapGuard AI ScamShield, a premium financial security intelligence model.
+Analyze the message text or payment proof image below for scam indicators, fraudulent patterns, or visual forgery tells.
+
+Key Areas of Analysis:
+1. SMS/WhatsApp/Email Text Phishing: Check for high-pressure tactics, artificial urgency, threats of account suspension, suspicious/mismatched links, bank impersonation, fake lucky draws, or requests for OTP/personal info.
+2. Fake Payment Proof/Screenshots: Carefully check the provided image for tells of image manipulation, incorrect or mismatched font sizes/types, unnatural text alignment, fake transaction status badges, suspicious transaction reference formats, or altered receipt layouts.
+
+Analyze the input and return a strict, valid JSON object with the following keys:
+- riskScore: integer between 0 and 100.
+- riskLevel: "low", "medium", "high", or "critical".
+- verdict: A short, high-level, clear safety verdict (e.g., "Mismatched font layouts suggest payment screenshot alteration").
+- summary: A detailed, human-friendly explanation of why it is flagged or safe.
+- reasons: An array of strings explaining specific indicators found.
+- recommendedAction: What concrete action the user should take immediately.
+- redFlags: An array of strings listing specific suspicious signals (e.g., "Urgent tone detected", "Mismatched logo fonts").
+
+Input text: ${body.text ?? 'None provided'}
+` });
 
   if (body.imageBase64) {
     parts.push({ inlineData: { mimeType: body.imageMimeType ?? 'image/png', data: body.imageBase64 } });
   }
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,16 +90,20 @@ export async function POST(req: Request) {
         contents: [{ role: 'user', parts }],
         generationConfig: {
           temperature: 0,
-          responseMimeType: 'application/json',
         },
       }),
     });
 
+    const bodyText = await response.text().catch(() => '');
     if (!response.ok) {
-      return NextResponse.json({ error: 'Gemini request failed' }, { status: response.status });
+      return NextResponse.json({
+        error: 'Gemini request failed',
+        status: response.status,
+        detail: bodyText.slice(0, 500),
+      }, { status: response.status });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(bodyText);
     const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
     const parsed = text ? extractJson(text) : null;
 

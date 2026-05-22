@@ -1,18 +1,11 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
 import { supabase } from '../../lib/supabaseBrowserClient';
-
-const monthlyData = [
-  { label: 'Food', value: 78 },
-  { label: 'Transport', value: 52 },
-  { label: 'Bills', value: 89 },
-  { label: 'Shopping', value: 41 },
-  { label: 'Savings', value: 66 },
-];
+import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
 
 function Gauge({ value }: { value: number }) {
   const radius = 54;
@@ -57,17 +50,96 @@ export default function MoneyCoachPage() {
   const [notes, setNotes] = useState('Keep discretionary spending under control and raise savings first.');
   const [status, setStatus] = useState('Ready to save a financial health snapshot.');
   const [saving, setSaving] = useState(false);
+  const [monthlyData, setMonthlyData] = useState([
+    { label: 'Food', value: 34 },
+    { label: 'Transport', value: 26 },
+    { label: 'Shopping', value: 20 },
+    { label: 'Bills', value: 20 },
+  ]);
+  const [receiptsLoaded, setReceiptsLoaded] = useState(false);
+  const [savingsGoal, setSavingsGoal] = useState(500);
+  const [aiSuggestions, setAiSuggestions] = useState<{
+    summary: string;
+    suggestions: string[];
+    goalFeasibility: string;
+    adjustedGoal: number | null;
+    riskNote: string;
+  } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadReceipts() {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return;
+
+      const { data, error } = await supabase
+        .from('receipts_data')
+        .select('total_amount, category')
+        .eq('user_id', user.user.id);
+
+      if (!error && data && data.length > 0) {
+        const totalExpenses = data.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0);
+        if (totalExpenses > 0) setExpenses(Math.round(totalExpenses));
+
+        const categoryTotals: Record<string, number> = {};
+        data.forEach((r) => {
+          const cat = r.category || 'Other';
+          categoryTotals[cat] = (categoryTotals[cat] || 0) + (Number(r.total_amount) || 0);
+        });
+
+        const grandTotal = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+        if (grandTotal > 0) {
+          setMonthlyData(
+            Object.entries(categoryTotals)
+              .map(([label, value]) => ({ label, value: Math.max(1, Math.round((value / grandTotal) * 100)) }))
+              .sort((a, b) => b.value - a.value),
+          );
+        }
+
+        setStatus(`Loaded ${data.length} receipts from SnapSortAI. Adjust inputs and save a snapshot.`);
+        setReceiptsLoaded(true);
+      }
+    }
+
+    loadReceipts();
+  }, []);
 
   const savingsRate = useMemo(() => Math.max(0, Math.round(((income - expenses) / income) * 100)), [income, expenses]);
   const topCategory = useMemo(() => monthlyData.slice().sort((a, b) => b.value - a.value)[0], []);
   const estimatedSavings = Math.max(0, Math.round(income - expenses));
   const persona = topCategory.label === 'Food' ? '🍜 High Food Spender' : topCategory.label === 'Shopping' ? '⚠️ Impulse Buyer Risk' : '📊 Balanced Builder';
 
-  const weeklyFeed = [
-    'Food spending is running above your normal baseline.',
-    'You have room to increase your savings by 8% this week.',
-    'Small recurring charges are affecting your score more than one-off expenses.',
-  ];
+  const feasibilityBadge = aiSuggestions
+    ? aiSuggestions.goalFeasibility === 'on_track' ? 'bg-emerald-400/15 text-emerald-100 border-emerald-300/20'
+      : aiSuggestions.goalFeasibility === 'needs_adjustment' ? 'bg-amber-400/15 text-amber-100 border-amber-300/20'
+      : 'bg-rose-400/15 text-rose-100 border-rose-300/20'
+    : '';
+
+  async function getAiSuggestions() {
+    setAiLoading(true);
+    try {
+      const authHeaders = await getSupabaseAuthHeaders();
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (authHeaders.Authorization) {
+        headers.Authorization = authHeaders.Authorization;
+      }
+
+      const response = await fetch('/api/moneycoach', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ income, expenses, savingsGoal, topCategory: topCategory.label }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error ?? 'Failed to get suggestions');
+
+      setAiSuggestions(data?.parsed ?? null);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Unable to get AI suggestions.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   async function saveSnapshot() {
     setStatus('Saving financial health record...');
@@ -139,7 +211,7 @@ export default function MoneyCoachPage() {
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
                   <div className="rounded-3xl bg-black/20 p-4">
                     <p className="text-xs uppercase tracking-[0.28em] text-white/45">Total spent</p>
-                    <div className="mt-3 text-2xl font-semibold">${expenses.toLocaleString()}</div>
+                    <div className="mt-3 text-2xl font-semibold">RM{expenses.toLocaleString()}</div>
                   </div>
                   <div className="rounded-3xl bg-black/20 p-4">
                     <p className="text-xs uppercase tracking-[0.28em] text-white/45">Top category</p>
@@ -147,7 +219,7 @@ export default function MoneyCoachPage() {
                   </div>
                   <div className="rounded-3xl bg-black/20 p-4">
                     <p className="text-xs uppercase tracking-[0.28em] text-white/45">Estimated savings</p>
-                    <div className="mt-3 text-2xl font-semibold">${estimatedSavings.toLocaleString()}</div>
+                    <div className="mt-3 text-2xl font-semibold">RM{estimatedSavings.toLocaleString()}</div>
                   </div>
                 </div>
               </Card>
@@ -187,17 +259,54 @@ export default function MoneyCoachPage() {
               </Card>
 
               <Card className="border border-white/10 bg-white/5">
-                <p className="text-xs uppercase tracking-[0.3em] text-white/50">AI weekly report</p>
-                <div className="mt-4 space-y-4 border-l border-white/10 pl-4">
-                  {weeklyFeed.map((item, index) => (
-                    <div key={item} className="relative">
-                      <span className="absolute -left-[1.3rem] top-1.5 h-2.5 w-2.5 rounded-full bg-sky-300" />
-                      <p className="text-sm text-white/75">{item}</p>
-                      {index < weeklyFeed.length - 1 ? <div className="mt-4" /> : null}
+                <p className="text-xs uppercase tracking-[0.3em] text-white/50">Savings goal</p>
+                <div className="mt-4">
+                  <label className="block">
+                    <span className="mb-2 block text-sm text-white/70">Monthly savings target (RM)</span>
+                    <div className="flex gap-3">
+                      <input
+                        type="number"
+                        value={savingsGoal}
+                        onChange={(event) => setSavingsGoal(Number(event.target.value || 0))}
+                        className="flex-1 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none"
+                      />
+                      <Button onClick={getAiSuggestions} disabled={aiLoading}>
+                        {aiLoading ? 'Thinking...' : 'AI Coach'}
+                      </Button>
                     </div>
-                  ))}
+                  </label>
                 </div>
               </Card>
+
+              {aiSuggestions && (
+                <Card className="border border-sky-500/20 bg-sky-500/5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-[0.3em] text-sky-300/70">AI Money Coach</p>
+                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${feasibilityBadge}`}>
+                      {aiSuggestions.goalFeasibility === 'on_track' ? 'On Track' : aiSuggestions.goalFeasibility === 'needs_adjustment' ? 'Needs Work' : 'Unrealistic'}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-white/85">{aiSuggestions.summary}</p>
+                  <div className="mt-4 space-y-3 text-sm text-white/75">
+                    {aiSuggestions.suggestions.map((s, i) => (
+                      <div key={i} className="flex gap-3 rounded-xl bg-black/20 px-4 py-3">
+                        <span className="mt-0.5 text-sky-300">{i + 1}.</span>
+                        <span>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {aiSuggestions.riskNote && (
+                    <div className="mt-4 rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                      ⚠ {aiSuggestions.riskNote}
+                    </div>
+                  )}
+                  {aiSuggestions.adjustedGoal && (
+                    <p className="mt-3 text-sm text-amber-200">
+                      Suggested savings target: <span className="font-semibold">RM{aiSuggestions.adjustedGoal.toLocaleString()}/month</span>
+                    </p>
+                  )}
+                </Card>
+              )}
 
               <Card className="border border-white/10 bg-white/5">
                 <label className="block">

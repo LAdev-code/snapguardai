@@ -57,14 +57,45 @@ export async function POST(req: Request) {
   }
 
   const parts: Array<Record<string, unknown>> = [];
-  parts.push({ text: `Extract receipt data and return strict JSON with keys: merchant, transactionDate, currency, total, tax, category, paymentMethod, items, confidence, summary. The items field should be an array of objects with name, quantity, price. If a field is unknown, use null or an empty array. User notes: ${body.text ?? ''}` });
+  parts.push({ text: `You are SnapGuard AI SnapSortAI, a premium receipt intelligence model specialising in OCR extraction, merchant recognition, and financial categorisation.
+
+Analyse the receipt image or text below and extract all available transaction data. Be meticulous — read every line, including small print, tax breakdowns, and payment method details.
+
+Key Extraction Guidelines:
+1. Merchant: Identify the store/business name exactly as printed. If ambiguous, infer from context (e.g. "MCD" → "McDonald's").
+2. Transaction Date: Extract in ISO 8601 format (YYYY-MM-DD). If only a partial date is visible, fill missing parts with null.
+3. Currency: Detect the currency symbol or code (MYR, USD, SGD, etc.). Default to MYR for Malaysian receipts.
+4. Total & Tax: Parse numeric values. Remove currency symbols and commas. Use null if not visible.
+5. Category: Classify into one of: Food, Transport, Shopping, Bills, Health, Entertainment, Education, Groceries, Utilities, Other.
+6. Payment Method: Detect from receipt footer — Cash, Card, Touch 'n Go, DuitNow QR, FPX, or null.
+7. Line Items: Extract each item row as {name, quantity, price}. Quantity defaults to 1 if not shown.
+8. Confidence: Score 0–100 indicating how reliable the extraction is. Low confidence when image is blurry, cropped, or text is partially illegible.
+9. Summary: One-sentence financial insight about this purchase (e.g. "Weekly grocery run at AEON — largest expense this week in Groceries.").
+
+User-provided notes for additional context: ${body.text ?? 'None provided'}
+
+Return a strict JSON object with the following keys:
+- merchant: string or null
+- transactionDate: string (YYYY-MM-DD) or null
+- currency: string or null
+- total: number or null
+- tax: number or null
+- category: string or null
+- paymentMethod: string or null
+- items: array of {name: string, quantity: number, price: number} or empty array
+- confidence: number (0–100) or null
+- summary: string or null
+` });
 
   if (body.imageBase64) {
     parts.push({ inlineData: { mimeType: body.imageMimeType ?? 'image/png', data: body.imageBase64 } });
   }
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`, {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,16 +104,22 @@ export async function POST(req: Request) {
         contents: [{ role: 'user', parts }],
         generationConfig: {
           temperature: 0.2,
-          responseMimeType: 'application/json',
         },
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
+    const bodyText = await response.text().catch(() => '');
     if (!response.ok) {
-      return NextResponse.json({ error: 'Gemini request failed' }, { status: response.status });
+      return NextResponse.json({
+        error: 'Gemini request failed',
+        status: response.status,
+        detail: bodyText.slice(0, 500),
+      }, { status: response.status });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(bodyText);
     const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
     const parsed = text ? extractJson(text) : null;
 
@@ -90,7 +127,8 @@ export async function POST(req: Request) {
       parsed,
       raw: data,
     });
-  } catch {
-    return NextResponse.json({ error: 'AI call failed' }, { status: 502 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: 'AI call failed', detail: message }, { status: 502 });
   }
 }

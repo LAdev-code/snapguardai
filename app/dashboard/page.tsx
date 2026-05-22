@@ -51,7 +51,7 @@ export default function DashboardPage() {
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <div className="rounded-3xl bg-black/20 p-5">
                   <p className="text-xs uppercase tracking-[0.28em] text-white/45">Total spending</p>
-                  <div className="mt-3 text-4xl font-semibold">${monthlySpending.toLocaleString()}</div>
+                  <div className="mt-3 text-4xl font-semibold">RM{monthlySpending.toLocaleString()}</div>
                   <p className="mt-2 text-sm text-white/60">Imported from your SnapSortAI receipt flow.</p>
                 </div>
                 <div className="rounded-3xl bg-black/20 p-5">

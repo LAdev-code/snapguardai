@@ -80,7 +80,7 @@ export default function Page() {
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               <div className="rounded-2xl bg-black/20 p-4">
                 <p className="text-xs uppercase tracking-[0.28em] text-white/45">Spending</p>
-                <p className="mt-3 text-3xl font-semibold">$2,780</p>
+                <p className="mt-3 text-3xl font-semibold">RM2,780</p>
                 <p className="mt-2 text-sm text-white/55">Tracked from receipts and manual entries.</p>
               </div>
               <div className="rounded-2xl bg-black/20 p-4">
