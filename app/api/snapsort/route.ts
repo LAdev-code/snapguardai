@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { callGemini } from '../../../lib/geminiClient';
 
 type SnapSortPayload = {
   text?: string;
@@ -92,82 +93,41 @@ Return a strict JSON object with the following keys:
   }
 
   try {
-    // Retry logic for rate limits / transient errors
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`;
-    const maxAttempts = 3;
-    let attempt = 0;
-    let lastResp: Response | null = null;
-    let lastBodyText = '';
+    const { response, bodyText } = await callGemini({
+      apiKeys: [
+        key,
+        process.env.GEMINI_KEY_SCAMSHIELD ?? '',
+        process.env.GEMINI_KEY_MONEYCOACH ?? '',
+      ],
+      model: 'gemini-2.5-flash',
+      parts,
+      temperature: 0.2,
+    });
 
-    while (attempt < maxAttempts) {
-      attempt += 1;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+    if (!response.ok) {
+      const retryAfter = response.headers.get('Retry-After');
+      const status = response.status;
+      console.error('[snapsort] Gemini request failed', {
+        status,
+        retryAfter: retryAfter ?? null,
+        detail: bodyText.slice(0, 1000),
+      });
 
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts }],
-            generationConfig: { temperature: 0.2 },
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-
-        lastResp = resp;
-        lastBodyText = await resp.text().catch(() => '');
-
-        if (resp.ok) {
-          const data = JSON.parse(lastBodyText || '{}');
-          const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
-          const parsed = text ? extractJson(text) : null;
-          return NextResponse.json({ parsed, raw: data });
-        }
-
-        // If rate limited, surface Retry-After and avoid immediate retry unless helpful
-        if (resp.status === 429) {
-          const retryAfter = resp.headers.get('Retry-After');
-          const payload = {
-            error: 'Rate limited by upstream AI provider',
-            status: 429,
-            detail: lastBodyText.slice(0, 1000),
-            retryAfter: retryAfter ?? undefined,
-          } as any;
-          const headers: Record<string, string> = {};
-          if (retryAfter) headers['Retry-After'] = retryAfter;
-          return NextResponse.json(payload, { status: 429, headers });
-        }
-
-        // For other 5xx errors, try again with exponential backoff
-        if (resp.status >= 500 && attempt < maxAttempts) {
-          const backoff = 500 * Math.pow(2, attempt - 1);
-          await new Promise((res) => setTimeout(res, backoff));
-          continue;
-        }
-
-        // Non-retriable error: return the upstream response body and status
-        return NextResponse.json({ error: 'Gemini request failed', status: resp.status, detail: lastBodyText.slice(0, 1000) }, { status: resp.status });
-      } catch (fetchErr) {
-        clearTimeout(timeout);
-        // Abort or network error; retry unless we've exhausted attempts
-        if (attempt >= maxAttempts) {
-          const message = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-          return NextResponse.json({ error: 'AI call failed', detail: message }, { status: 502 });
-        }
-        const backoff = 500 * Math.pow(2, attempt - 1);
-        await new Promise((res) => setTimeout(res, backoff));
-        continue;
-      }
+      const payload = {
+        error: status === 429 ? 'Rate limited by upstream AI provider' : 'Gemini request failed',
+        status,
+        detail: bodyText.slice(0, 1000),
+        retryAfter: retryAfter ?? undefined,
+      } as any;
+      const headers: Record<string, string> = {};
+      if (retryAfter) headers['Retry-After'] = retryAfter;
+      return NextResponse.json(payload, { status, headers });
     }
 
-    // If we exit loop without success, return last known response or generic error
-    if (lastResp) {
-      return NextResponse.json({ error: 'AI provider error', status: lastResp.status, detail: lastBodyText.slice(0, 1000) }, { status: lastResp.status });
-    }
-
-    return NextResponse.json({ error: 'AI call failed' }, { status: 502 });
+    const data = JSON.parse(bodyText || '{}');
+    const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
+    const parsed = text ? extractJson(text) : null;
+    return NextResponse.json({ parsed, raw: data });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: 'AI call failed', detail: message }, { status: 502 });

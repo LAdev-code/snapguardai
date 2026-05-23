@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { callGemini } from '../../../lib/geminiClient';
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
@@ -44,16 +45,15 @@ export async function POST(req: Request) {
   const monthlySurplus = Math.max(0, income - expenses);
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [{
-              text: `You are SnapGuard AI MoneyCoach, a personal financial advisor for Malaysian users.
+    const { response, bodyText } = await callGemini({
+      apiKeys: [
+        key,
+        process.env.GEMINI_KEY_SNAPSORT ?? '',
+        process.env.GEMINI_KEY_SCAMSHIELD ?? '',
+      ],
+      model: 'gemini-2.5-flash',
+      parts: [{
+        text: `You are SnapGuard AI MoneyCoach, a personal financial advisor for Malaysian users.
 
 User's Financial Profile:
 - Monthly Income: RM${income.toLocaleString()}
@@ -71,23 +71,21 @@ Provide personalised financial advice in JSON format with these keys:
 - riskNote: A short note about any financial risk patterns detected (e.g. spending exceeds income, too much on one category).
 
 Return ONLY valid JSON, no markdown formatting.`,
-            }],
-          }],
-          generationConfig: { temperature: 0.3 },
-        }),
-      },
-    );
+      }],
+      temperature: 0.3,
+    });
 
-    const bodyText = await response.text().catch(() => '');
     if (!response.ok) {
+      const retryAfter = response.headers.get('Retry-After');
       return NextResponse.json({
-        error: 'Gemini request failed',
+        error: response.status === 429 ? 'Rate limited by upstream AI provider' : 'Gemini request failed',
         status: response.status,
         detail: bodyText.slice(0, 500),
-      }, { status: response.status });
+        retryAfter: retryAfter ?? undefined,
+      }, { status: response.status, headers: retryAfter ? { 'Retry-After': retryAfter } : undefined });
     }
 
-    const data = JSON.parse(bodyText);
+    const data = JSON.parse(bodyText || '{}');
     const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
     const parsed = text ? JSON.parse(text) : null;
 
