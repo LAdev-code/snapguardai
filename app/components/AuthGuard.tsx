@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseBrowserClient';
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
+export default function AuthGuard({ children, allowAnonymous = false }: { children: React.ReactNode; allowAnonymous?: boolean }) {
   const [checking, setChecking] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const router = useRouter();
@@ -13,12 +13,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
       if (!data.session) {
-        router.replace('/login');
+        if (allowAnonymous) {
+          setAuthorized(true);
+        } else {
+          router.replace('/login');
+        }
       } else {
         setAuthorized(true);
       }
     }).catch(() => {
-      if (mounted) router.replace('/login');
+      if (mounted) {
+        if (allowAnonymous) {
+          setAuthorized(true);
+        } else {
+          router.replace('/login');
+        }
+      }
     }).finally(() => {
       if (mounted) setChecking(false);
     });
@@ -27,8 +37,13 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!mounted) return;
 
       if (!session) {
-        setAuthorized(false);
-        router.replace('/login');
+        if (allowAnonymous) {
+          setAuthorized(true);
+          setChecking(false);
+        } else {
+          setAuthorized(false);
+          router.replace('/login');
+        }
       } else {
         setAuthorized(true);
         setChecking(false);
@@ -39,7 +54,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       mounted = false;
       sub?.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [allowAnonymous, router]);
 
   if (checking) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   if (!authorized) return null;

@@ -8,6 +8,7 @@ type SnapSortPayload = {
   imageMimeType?: string;
   fileName?: string;
   documentType?: string;
+  trialMode?: boolean;
 };
 
 function extractJson(text: string) {
@@ -28,8 +29,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing payload' }, { status: 400 });
   }
 
+  const trialMode = body.trialMode === true;
   const authHeader = req.headers.get('authorization');
-  if (!authHeader) {
+  if (!authHeader && !trialMode) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -45,17 +47,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Supabase config missing' }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey, {
-    global: {
-      headers: {
-        Authorization: authHeader,
+  if (authHeader) {
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
       },
-    },
-  });
+    });
 
-  const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   const documentType = body.documentType?.trim() || 'Auto detect';

@@ -48,6 +48,9 @@ export default function Page() {
             <a href="/register" className="rounded-full bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-200">
               Start Analysis
             </a>
+            <a href="/snapsort?trial=1" className="rounded-full border border-sky-300/20 bg-sky-400/10 px-6 py-3 font-semibold text-sky-100 transition hover:bg-sky-400/20">
+              Try it out
+            </a>
             <a href="/login" className="rounded-full border border-white/15 bg-white/5 px-6 py-3 font-semibold text-white transition hover:bg-white/10">
               Sign in
             </a>

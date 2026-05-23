@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
@@ -159,6 +160,8 @@ export default function SnapSortPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyCategory, setHistoryCategory] = useState<HistoryFilter>('all');
+  const searchParams = useSearchParams();
+  const trialMode = searchParams.get('trial') === '1';
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
@@ -223,6 +226,7 @@ export default function SnapSortPage() {
   }
 
   async function saveReceiptToDashboard(parsed: ReceiptResult | null) {
+    if (trialMode) return;
     if (!parsed) return;
 
     try {
@@ -293,7 +297,7 @@ export default function SnapSortPage() {
       const response = await fetch('/api/snapsort', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: textPayload, documentType }),
+        body: JSON.stringify({ text: textPayload, documentType, trialMode }),
       });
 
       const data = await response.json().catch(() => null);
@@ -331,13 +335,16 @@ export default function SnapSortPage() {
   }
 
   return (
-    <AuthGuard>
+    <AuthGuard allowAnonymous={trialMode}>
       <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(36,160,219,0.2),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(45,212,191,0.14),transparent_24%),linear-gradient(180deg,#07111f_0%,#0b1d34_52%,#08111d_100%)] text-slate-100">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <header className="max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-200/70">SnapSortAI</p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Turn receipts and invoices into organized spending records.</h1>
             <p className="mt-3 text-sm text-slate-300">Use SnapSortAI for normal receipts, business invoices, and engineering invoices. We extract the full document, save it to Supabase, and sync the totals to Money Coach.</p>
+            {trialMode ? (
+              <p className="mt-3 inline-flex rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-sky-100">Trial mode enabled</p>
+            ) : null}
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href="/scamshield" className="inline-flex items-center rounded-full border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20">
                 Check scam risk
