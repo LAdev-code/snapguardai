@@ -1,17 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ImageResponse } from 'next/og';
 
 async function getLogoDataUrl() {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL ?? 'http://localhost:3000';
-  const response = await fetch(new URL('/logo.png', baseUrl));
-  const arrayBuffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = '';
-
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-
-  return `data:image/png;base64,${btoa(binary)}`;
+  const logoPath = join(process.cwd(), 'public', 'logo.png');
+  const fileBuffer = await readFile(logoPath);
+  return `data:image/png;base64,${Buffer.from(fileBuffer).toString('base64')}`;
 }
 
 export default async function Icon() {
