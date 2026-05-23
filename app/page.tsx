@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 
 export default function Page() {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(94,125,229,0.16),_transparent_35%),linear-gradient(180deg,_#09111f_0%,_#0b1220_56%,_#08101b_100%)] text-white">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(94,125,229,0.16),transparent_35%),linear-gradient(180deg,#09111f_0%,#0b1220_56%,#08101b_100%)] text-white">
       <section className="mx-auto grid max-w-7xl gap-10 px-6 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
         <div className="max-w-2xl">
           <span className="inline-flex items-center rounded-full border border-white/15 bg-white/6 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-white/70">
@@ -74,7 +74,7 @@ export default function Page() {
             </Link>
           </div>
 
-          <div className="mt-8 rounded-[2rem] border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <div className="mt-8 rounded-4xl border border-white/10 bg-white/5 p-5 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-white/45">Built for Malaysia</p>
@@ -93,7 +93,7 @@ export default function Page() {
         </div>
 
         <div className="grid gap-4">
-          <div className="rounded-[2rem] border border-white/10 bg-white/6 p-6 shadow-2xl shadow-black/20">
+          <div className="rounded-4xl border border-white/10 bg-white/6 p-6 shadow-2xl shadow-black/20">
             <div className="flex items-center justify-between text-sm text-white/60">
               <span>Live overview</span>
               <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-emerald-200">Protected</span>
@@ -110,7 +110,7 @@ export default function Page() {
                 <p className="mt-2 text-sm text-white/55">Updated by ScamShield scans.</p>
               </div>
             </div>
-            <div className="mt-4 h-56 rounded-[1.5rem] border border-white/8 bg-[linear-gradient(135deg,_rgba(125,211,252,0.14),_rgba(52,211,153,0.12),_rgba(255,255,255,0.04))] p-5">
+            <div className="mt-4 h-56 rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(125,211,252,0.14),rgba(52,211,153,0.12),rgba(255,255,255,0.04))] p-5">
               <div className="flex h-full flex-col justify-between rounded-[1.25rem] border border-white/10 bg-slate-950/35 p-5">
                 <div className="flex items-center justify-between text-sm text-white/60">
                   <span>Secure account sync</span>

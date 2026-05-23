@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import Card from '../components/Card';
-import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseBrowserClient';
@@ -58,17 +57,13 @@ export default function DashboardPage() {
 
   return (
     <AuthGuard>
-      <main className="min-h-screen bg-[linear-gradient(180deg,_rgba(7,10,18,1),_rgba(11,15,24,1))] text-white">
+      <main className="min-h-screen bg-[linear-gradient(180deg,rgba(7,10,18,1),rgba(11,15,24,1))] text-white">
         <div className="mx-auto max-w-7xl px-6 py-10">
           <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-white/45">Main Hub</p>
               <h1 className="mt-2 text-4xl font-semibold tracking-tight">Dashboard</h1>
               <p className="mt-2 text-sm text-white/65">Start here to scan receipts, check scams, or review financial health.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/snapsort"><Button>Scan Receipt</Button></Link>
-              <Link href="/scamshield"><Button variant="secondary">Check for Scams</Button></Link>
             </div>
           </header>
 

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "SnapSortAI",
-  description: "Private receipt analysis workspace.",
+  title: "SnapSortAI Receipt Scanner",
+  description: "Upload receipts, extract merchant and transaction details, and save structured spending records to SnapGuard AI.",
   alternates: {
     canonical: "/snapsort",
   },

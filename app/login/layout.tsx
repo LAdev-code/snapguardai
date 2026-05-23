@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Login",
-  description: "Sign in to SnapGuard AI to access your secure dashboard.",
+  title: "Log In",
+  description: "Sign in to SnapGuard AI to access your secure scam protection and financial analysis dashboard.",
   alternates: {
     canonical: "/login",
   },

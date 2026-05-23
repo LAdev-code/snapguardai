@@ -38,6 +38,8 @@ export async function POST(req: Request) {
     expenses?: number;
     savingsGoal?: number;
     topCategory?: string;
+    assets?: number;
+    liabilities?: number;
   } | null;
 
   if (!body || body.income == null || body.expenses == null || body.savingsGoal == null) {
@@ -70,9 +72,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { income, expenses, savingsGoal, topCategory } = body;
+  const { income, expenses, savingsGoal, topCategory, assets, liabilities } = body;
   const savingsRate = Math.max(0, Math.round(((income - expenses) / income) * 100));
   const monthlySurplus = Math.max(0, income - expenses);
+  const netWorth = Math.max(0, (Number(assets) || 0) - (Number(liabilities) || 0));
+  const assetLabel = typeof assets === 'number' ? `RM${assets.toLocaleString()}` : 'Unknown';
+  const liabilityLabel = typeof liabilities === 'number' ? `RM${liabilities.toLocaleString()}` : 'Unknown';
 
   try {
     const { response, bodyText } = await callGemini({
@@ -92,6 +97,9 @@ User's Financial Profile:
 - Current Savings Rate: ${savingsRate}%
 - Monthly Surplus: RM${monthlySurplus.toLocaleString()}
 - Monthly Savings Goal: RM${savingsGoal.toLocaleString()}
+- Total Assets: ${assetLabel}
+- Total Liabilities: ${liabilityLabel}
+- Net Worth: RM${netWorth.toLocaleString()}
 
 Provide personalised financial advice in JSON format with these keys:
 - summary: A one-sentence overview of their financial health.
@@ -99,6 +107,8 @@ Provide personalised financial advice in JSON format with these keys:
 - goalFeasibility: "on_track", "needs_adjustment", or "unrealistic" based on whether the savings goal is achievable.
 - adjustedGoal: A suggested realistic monthly savings goal in RM if the current goal needs adjustment (number or null).
 - riskNote: A short note about any financial risk patterns detected (e.g. spending exceeds income, too much on one category).
+
+Use the assets and liabilities figures to tailor recommendations around debt reduction, savings buffers, and net worth growth.
 
 Return ONLY valid JSON, no markdown formatting.`,
       }],
