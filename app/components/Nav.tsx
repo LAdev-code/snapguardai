@@ -37,7 +37,7 @@ export default function Nav() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div className="flex items-center gap-4">
             <Link href="/" className="inline-flex items-center gap-3">
-              <Image src="/assets/snapguard-logo.svg" alt="SnapGuard AI" width={40} height={40} />
+              <Image src="/logo.png" alt="SnapGuard AI" width={40} height={40} />
               <span className="text-lg font-semibold tracking-tight text-white">SnapGuard AI</span>
             </Link>
             <div className="hidden items-center gap-1 md:flex">

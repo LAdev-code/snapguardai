@@ -28,13 +28,13 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const { data } = await supabase.auth.getUser();
   const isProtected = protectedPaths.some((path) => request.nextUrl.pathname.startsWith(path));
 
-  if (isProtected && !data.user) {
-    const redirectUrl = new URL('/login', request.url);
-    redirectUrl.searchParams.set('next', request.nextUrl.pathname);
-    return NextResponse.redirect(redirectUrl);
+  // Let the client-side AuthGuard control protected route access.
+  // This avoids production redirect loops when the browser session is already valid
+  // but not yet visible to the proxy on the same navigation.
+  if (isProtected) {
+    return response;
   }
 
   return response;

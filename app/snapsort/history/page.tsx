@@ -168,8 +168,8 @@ export default function HistoryPage() {
           const rowHeight = Math.max(14, descriptionLines.length * 5 + 4);
 
           cursorY = ensureSpace(cursorY, rowHeight + 4);
-          const rowFill = index % 2 === 0 ? [248, 250, 252] as const : [241, 245, 249] as const;
-          doc.setFillColor(...rowFill);
+          const rowFill = index % 2 === 0 ? [248, 250, 252] : [241, 245, 249];
+          doc.setFillColor(rowFill[0], rowFill[1], rowFill[2]);
           doc.roundedRect(margin, cursorY, contentWidth, rowHeight, 2, 2, 'F');
 
           doc.setFont('helvetica', 'normal');

@@ -81,9 +81,9 @@ export const metadata: Metadata = {
     images: [previewImage.url],
   },
   icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/assets/snapguard-logo.svg',
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
   },
   robots: {
     index: true,
@@ -115,7 +115,7 @@ export default function RootLayout({
       lang="en"
       className={`${plusJakarta.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[var(--color-background)] pb-20 md:pb-0">
+      <body className="min-h-full flex flex-col bg-background pb-20 md:pb-0">
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
