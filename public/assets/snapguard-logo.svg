@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="100%" height="100%" fill="#000" />
+  <g fill="#cbd5e1">
+    <rect x="96" y="96" width="320" height="320" rx="40" />
+    <text x="50%" y="58%" font-family="Inter, Arial, sans-serif" font-size="56" fill="#0f172a" text-anchor="middle">SNAP</text>
+    <text x="50%" y="72%" font-family="Inter, Arial, sans-serif" font-size="48" fill="#0f172a" text-anchor="middle">GUARD AI</text>
+  </g>
+</svg>

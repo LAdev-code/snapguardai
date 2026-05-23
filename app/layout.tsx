@@ -19,6 +19,12 @@ const inter = Inter({
 
 const baseUrl = getBaseUrl();
 const googleVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
+const previewImage = {
+  url: "/assets/snapguard-logo-512.png",
+  width: 512,
+  height: 512,
+  alt: "SnapGuard AI logo",
+};
 
 const jsonLd = [
   {
@@ -66,11 +72,18 @@ export const metadata: Metadata = {
     siteName: "SnapGuard AI",
     title: "SnapGuard AI | Scam Protection and Financial Insights",
     description: "Detect scam risks, organize receipts, and track your financial health in one AI-powered app.",
+    images: [previewImage],
   },
   twitter: {
     card: "summary_large_image",
     title: "SnapGuard AI",
     description: "Detect scam risks, organize receipts, and track your financial health.",
+    images: [previewImage.url],
+  },
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/assets/snapguard-logo.svg',
   },
   robots: {
     index: true,

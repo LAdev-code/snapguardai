@@ -1,11 +1,31 @@
 import type { Metadata } from "next";
 import Link from 'next/link';
 
+const previewImage = {
+  url: "/assets/snapguard-logo-512.png",
+  width: 512,
+  height: 512,
+  alt: "SnapGuard AI logo",
+};
+
 export const metadata: Metadata = {
   title: "Protect Your Money and Understand Spending",
   description: "SnapGuard AI combines scam detection, receipt intelligence, and financial health tracking to help you make safer money decisions.",
   alternates: {
     canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    title: "Protect Your Money and Understand Spending",
+    description: "SnapGuard AI combines scam detection, receipt intelligence, and financial health tracking to help you make safer money decisions.",
+    url: "/",
+    images: [previewImage],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Protect Your Money and Understand Spending",
+    description: "SnapGuard AI combines scam detection, receipt intelligence, and financial health tracking to help you make safer money decisions.",
+    images: [previewImage.url],
   },
 };
 

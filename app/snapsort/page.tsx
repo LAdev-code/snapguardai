@@ -53,7 +53,6 @@ export default function SnapSortPage() {
   ]);
   const [history, setHistory] = useState<SavedReceipt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
@@ -185,8 +184,14 @@ export default function SnapSortPage() {
         body: JSON.stringify({ text: textPayload }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
+        if (response.status === 429) {
+          const retry = response.headers.get('Retry-After');
+          setStatus(`Rate limit reached. Try again${retry ? ` in ${retry} seconds` : ' later'}.`);
+          setLoading(false);
+          return;
+        }
         throw new Error(data?.error ?? 'Receipt analysis failed');
       }
 
@@ -375,52 +380,45 @@ export default function SnapSortPage() {
               <Card className="border border-white/10 bg-white/5">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.3em] text-white/50">Recent scans</p>
-                  <button
-                    onClick={() => setShowHistory((prev) => !prev)}
-                    className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20"
-                  >
-                    {showHistory ? 'Hide' : `View all (${history.length})`}
-                  </button>
+                  <a href="/snapsort/history" className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20">View all ({history.length})</a>
                 </div>
-                {showHistory && (
-                  <div className="mt-4 space-y-2 text-sm text-white/75 max-h-72 overflow-y-auto">
-                    {historyLoading ? (
-                      <div className="flex items-center gap-2 py-3 text-white/60">
-                        <div className="h-4 w-4 animate-spin rounded-full border border-white/20 border-t-white" />
-                        <span>Loading history...</span>
-                      </div>
-                    ) : history.length === 0 ? (
-                      <p className="py-3 text-white/45">No past scans yet. Analyse your first receipt above.</p>
-                    ) : (
-                      history.map((entry) => (
-                        <button
-                          key={entry.id}
-                          onClick={() => {
-                            setResult({
-                              merchant: entry.merchant,
-                              total: entry.total_amount,
-                              currency: entry.currency,
-                              category: entry.category,
-                              transactionDate: entry.transaction_date,
-                            });
-                            applyBreakdown();
-                            setStatus(`Loaded ${entry.merchant ?? 'receipt'} from history.`);
-                          }}
-                          className="w-full rounded-2xl bg-black/20 px-4 py-3 text-left transition hover:bg-black/40"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-white">{entry.merchant ?? 'Unknown merchant'}</span>
-                            <span>{entry.currency ?? ''} {entry.total_amount ?? '—'}</span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-3 text-xs text-white/45">
-                            <span>{entry.transaction_date ?? '—'}</span>
-                            <span>{entry.category ?? '—'}</span>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
+                <div className="mt-4 space-y-2 text-sm text-white/75 max-h-72 overflow-y-auto">
+                  {historyLoading ? (
+                    <div className="flex items-center gap-2 py-3 text-white/60">
+                      <div className="h-4 w-4 animate-spin rounded-full border border-white/20 border-t-white" />
+                      <span>Loading history...</span>
+                    </div>
+                  ) : history.length === 0 ? (
+                    <p className="py-3 text-white/45">No past scans yet. Analyse your first receipt above.</p>
+                  ) : (
+                    history.slice(0, 3).map((entry) => (
+                      <button
+                        key={entry.id}
+                        onClick={() => {
+                          setResult({
+                            merchant: entry.merchant,
+                            total: entry.total_amount,
+                            currency: entry.currency,
+                            category: entry.category,
+                            transactionDate: entry.transaction_date,
+                          });
+                          applyBreakdown();
+                          setStatus(`Loaded ${entry.merchant ?? 'receipt'} from history.`);
+                        }}
+                        className="w-full rounded-2xl bg-black/20 px-4 py-3 text-left transition hover:bg-black/40"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-white">{entry.merchant ?? 'Unknown merchant'}</span>
+                          <span>{entry.currency ?? ''} {entry.total_amount ?? '—'}</span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-xs text-white/45">
+                          <span>{entry.transaction_date ?? '—'}</span>
+                          <span>{entry.category ?? '—'}</span>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
               </Card>
             </div>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabaseBrowserClient';
@@ -34,8 +35,11 @@ export default function Nav() {
     <>
       <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-slate-950/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-lg font-semibold tracking-tight text-white">SnapGuard AI</Link>
+            <div className="flex items-center gap-4">
+            <Link href="/" className="inline-flex items-center gap-3">
+              <Image src="/assets/snapguard-logo.svg" alt="SnapGuard AI" width={40} height={40} />
+              <span className="text-lg font-semibold tracking-tight text-white">SnapGuard AI</span>
+            </Link>
             <div className="hidden items-center gap-1 md:flex">
               <Link href="/dashboard" className={desktopLinkClass('/dashboard')}>Dashboard</Link>
               <Link href="/snapsort" className={desktopLinkClass('/snapsort')}>SnapSortAI</Link>
