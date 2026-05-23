@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
+import AppTutorial, { type AppTutorialHandle } from '../components/AppTutorial';
 import { supabase } from '../../lib/supabaseBrowserClient';
 import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
 
@@ -44,6 +45,7 @@ function Gauge({ value }: { value: number }) {
 }
 
 export default function MoneyCoachPage() {
+  const tutorialRef = useRef<AppTutorialHandle>(null);
   const [income, setIncome] = useState(4200);
   const [expenses, setExpenses] = useState(2780);
   const [assets, setAssets] = useState(125000);
@@ -290,12 +292,18 @@ export default function MoneyCoachPage() {
             <div className="flex flex-wrap items-center gap-2 self-start rounded-full border border-white/10 bg-white/10 px-4 py-2 shadow-sm backdrop-blur">
               <Button variant="secondary" onClick={openEditPanel}>Edit finances</Button>
               <Button variant="secondary" onClick={() => setStatus('Ready to save a financial health snapshot.')}>Refresh data</Button>
+              <button
+                onClick={() => tutorialRef.current?.restart()}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10 transition"
+              >
+                Tutorial
+              </button>
             </div>
           </header>
 
           <section className="mt-6 grid gap-4 xl:grid-cols-[1.55fr_0.9fr]">
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="moneycoach-stats grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {[
                   { label: 'Expenses', value: `RM${expenses.toLocaleString()}`, tone: 'from-slate-900 via-slate-900 to-slate-800' },
                   { label: 'Income', value: `RM${income.toLocaleString()}`, tone: 'from-slate-900 via-cyan-950/80 to-slate-800' },
@@ -313,7 +321,7 @@ export default function MoneyCoachPage() {
                 ))}
               </div>
 
-              <Card className="border-white/10! bg-slate-950/65! text-slate-100! p-5 shadow-[0_18px_45px_rgba(8,15,28,0.45)] backdrop-blur">
+              <Card className="moneycoach-trend border-white/10! bg-slate-950/65! text-slate-100! p-5 shadow-[0_18px_45px_rgba(8,15,28,0.45)] backdrop-blur">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100/70">Monthly trend</p>
@@ -473,7 +481,7 @@ export default function MoneyCoachPage() {
                 </div>
               </Card>
 
-              <Card className="border-white/10! bg-slate-950/65! text-slate-100! p-5 shadow-[0_18px_45px_rgba(8,15,28,0.45)] backdrop-blur">
+              <Card className="moneycoach-ai border-white/10! bg-slate-950/65! text-slate-100! p-5 shadow-[0_18px_45px_rgba(8,15,28,0.45)] backdrop-blur">
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-100/70">AI Coach</p>
                 <div className="mt-4 space-y-3">
                   <label className="block">
@@ -599,6 +607,15 @@ export default function MoneyCoachPage() {
           )}
         </div>
       </main>
+      <AppTutorial ref={tutorialRef}
+        steps={[
+          { title: 'Financial Stats', description: 'View your expenses, income, balance, and average daily spend at a glance.', targetSelector: '.moneycoach-stats' },
+          { title: 'Monthly Trend', description: 'Track your spending patterns over time with the trend chart and category breakdown.', targetSelector: '.moneycoach-trend' },
+          { title: 'AI Coach', description: 'Set a monthly savings target and get personalised AI suggestions to improve your financial health.', targetSelector: '.moneycoach-ai' },
+        ]}
+        storageKey="snapguard_tutorial_moneycoach"
+        enabled={true}
+      />
     </AuthGuard>
   );
 }

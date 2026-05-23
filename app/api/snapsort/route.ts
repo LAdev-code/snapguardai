@@ -4,9 +4,6 @@ import { callGemini } from '../../../lib/geminiClient';
 
 type SnapSortPayload = {
   text?: string;
-  imageBase64?: string;
-  imageMimeType?: string;
-  fileName?: string;
   documentType?: string;
   trialMode?: boolean;
 };
@@ -25,7 +22,7 @@ function extractJson(text: string) {
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as SnapSortPayload | null;
-  if (!body || (!body.text && !body.imageBase64)) {
+  if (!body || !body.text) {
     return NextResponse.json({ error: 'Missing payload' }, { status: 400 });
   }
 
@@ -107,10 +104,6 @@ Return a strict JSON object with the following keys:
 - confidence: number (0–100) or null
 - summary: string or null
 ` });
-
-  if (body.imageBase64) {
-    parts.push({ inlineData: { mimeType: body.imageMimeType ?? 'image/png', data: body.imageBase64 } });
-  }
 
   try {
     const { response, bodyText } = await callGemini({

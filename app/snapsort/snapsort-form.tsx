@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AuthGuard from '../components/AuthGuard';
+import AppTutorial, { type AppTutorialHandle } from '../components/AppTutorial';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { supabase } from '../../lib/supabaseBrowserClient';
@@ -146,6 +147,7 @@ function buildInvoiceBreakdown(result: ReceiptResult | null): CategoryBreakdown[
 }
 
 export default function SnapsortForm() {
+  const tutorialRef = useRef<AppTutorialHandle>(null);
   const [notes, setNotes] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ReceiptResult | null>(null);
@@ -162,7 +164,14 @@ export default function SnapsortForm() {
   const [historyCategory, setHistoryCategory] = useState<HistoryFilter>('all');
   const searchParams = useSearchParams();
   const trialMode = searchParams.get('trial') === '1';
+  const [trialUsed, setTrialUsed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (trialMode && typeof window !== 'undefined') {
+      setTrialUsed(localStorage.getItem('snapguard_trial_used') === 'true');
+    }
+  }, [trialMode]);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
 
@@ -315,6 +324,10 @@ export default function SnapsortForm() {
       // Auto-save to receipts_data so MoneyCoach picks it up
       await saveReceiptToDashboard(parsed);
 
+      if (trialMode && typeof window !== 'undefined') {
+        localStorage.setItem('snapguard_trial_used', 'true');
+        setTrialUsed(true);
+      }
       setProcessingStep('Saved to dashboard.');
       setStatus('Receipt analyzed and saved. Check Money Coach for your spending overview.');
     } catch (error) {
@@ -341,7 +354,14 @@ export default function SnapsortForm() {
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Turn receipts and invoices into organized spending records.</h1>
             <p className="mt-3 text-sm text-slate-300">Use SnapSortAI for normal receipts, business invoices, and engineering invoices. We extract the full document, save it to Supabase, and sync the totals to Money Coach.</p>
             {trialMode ? (
-              <p className="mt-3 inline-flex rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-sky-100">Trial mode enabled</p>
+              trialUsed ? (
+                <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-5 py-4">
+                  <p className="text-sm font-semibold text-amber-100">Trial used</p>
+                  <p className="mt-1 text-sm text-amber-200/80">You've used your free trial. <Link href="/login" className="underline hover:text-amber-100">Sign in</Link> or <Link href="/register" className="underline hover:text-amber-100">create an account</Link> to keep using SnapSortAI.</p>
+                </div>
+              ) : (
+                <p className="mt-3 inline-flex rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-sky-100">Trial mode — 1 scan remaining</p>
+              )
             ) : null}
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href="/scamshield" className="inline-flex items-center rounded-full border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20">
@@ -350,6 +370,12 @@ export default function SnapsortForm() {
               <Link href="/moneycoach" className="inline-flex items-center rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20">
                 Open Money Coach
               </Link>
+              <button
+                onClick={() => tutorialRef.current?.restart()}
+                className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/70 transition hover:bg-white/10"
+              >
+                Tutorial
+              </button>
             </div>
           </header>
 
@@ -378,7 +404,7 @@ export default function SnapsortForm() {
                     setDragging(false);
                     selectFile(event.dataTransfer.files?.[0] ?? null);
                   }}
-                  className={`rounded-3xl border border-dashed p-6 text-sm transition ${dragging ? 'border-sky-300 bg-sky-400/15' : 'border-white/15 bg-white/5'}`}
+                  className={`snapsort-upload rounded-3xl border border-dashed p-6 text-sm transition ${dragging ? 'border-sky-300 bg-sky-400/15' : 'border-white/15 bg-white/5'}`}
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -430,7 +456,7 @@ export default function SnapsortForm() {
                   </div>
                 ) : null}
 
-                <label className="block">
+                <label className="snapsort-doc-type block">
                   <span className="mb-2 block text-sm text-slate-200">Document type</span>
                   <select
                     value={documentType}
@@ -459,9 +485,9 @@ export default function SnapsortForm() {
                 </label>
 
                 <div className="flex flex-wrap gap-3">
-                  <Button onClick={handleAnalyze} disabled={loading}>
-                    {loading ? 'Analyzing...' : 'Analyze receipt'}
-                  </Button>
+                <Button onClick={handleAnalyze} disabled={loading || (trialMode && trialUsed)}>
+                  {loading ? 'Analyzing...' : trialMode && trialUsed ? 'Trial used' : 'Analyze receipt'}
+                </Button>
                   <Button variant="secondary" onClick={() => {
                     setFile(null);
                     setNotes('');
@@ -480,7 +506,7 @@ export default function SnapsortForm() {
             </Card>
 
             <div className="space-y-6">
-              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
+              <Card className="snapsort-preview border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.3em] text-sky-100/70">Invoice preview</p>
                   <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">{result ? 'Ready' : 'Awaiting scan'}</span>
@@ -601,7 +627,7 @@ export default function SnapsortForm() {
                 </div>
               </Card>
 
-              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
+              <Card className="snapsort-history border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-sky-100/70">Receipt history</p>
@@ -687,6 +713,16 @@ export default function SnapsortForm() {
           </div>
         </div>
       </main>
+      <AppTutorial ref={tutorialRef}
+        steps={[
+          { title: 'Upload Receipt', description: 'Drop a receipt, invoice, or PDF here, or tap to browse files. PNG, JPG, WEBP, and PDF are supported.', targetSelector: '.snapsort-upload' },
+          { title: 'Document Type', description: 'Select the right document type for more accurate parsing — receipts, invoices, or engineering invoices.', targetSelector: '.snapsort-doc-type' },
+          { title: 'Invoice Preview', description: 'After analysis, view all extracted data: merchant, totals, tax, line items, and more.', targetSelector: '.snapsort-preview' },
+          { title: 'Receipt History', description: 'Browse, search, and filter your past scans. Click Preview to reload any receipt.', targetSelector: '.snapsort-history' },
+        ]}
+        storageKey="snapguard_tutorial_snapsort"
+        enabled={!trialMode}
+      />
     </AuthGuard>
   );
 }

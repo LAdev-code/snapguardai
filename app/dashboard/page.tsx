@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import Card from '../components/Card';
 import AuthGuard from '../components/AuthGuard';
-import { useEffect, useState } from 'react';
+import AppTutorial, { type AppTutorialHandle } from '../components/AppTutorial';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabaseBrowserClient';
 
 const monthlySpendingDefault = 2780;
@@ -16,6 +17,7 @@ const quickActions = [
 ];
 
 export default function DashboardPage() {
+  const tutorialRef = useRef<AppTutorialHandle>(null);
   const [monthlySpending, setMonthlySpending] = useState<number>(monthlySpendingDefault);
   const [financialHealthScore, setFinancialHealthScore] = useState<number>(financialHealthScoreDefault);
 
@@ -65,9 +67,15 @@ export default function DashboardPage() {
               <h1 className="mt-2 text-4xl font-semibold tracking-tight">Dashboard</h1>
               <p className="mt-2 text-sm text-white/65">Start here to scan receipts, check scams, or review financial health.</p>
             </div>
+            <button
+              onClick={() => tutorialRef.current?.restart()}
+              className="self-start rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10 transition"
+            >
+              Tutorial
+            </button>
           </header>
 
-          <section className="mt-8 grid gap-4 md:grid-cols-3">
+          <section className="dashboard-quick-actions mt-8 grid gap-4 md:grid-cols-3">
             {quickActions.map((action) => (
               <Link key={action.label} href={action.href} className="group rounded-[1.75rem] border border-white/10 bg-white/5 p-5 transition hover:border-white/20 hover:bg-white/8">
                 <div className={`inline-flex rounded-2xl px-4 py-2 text-sm font-semibold ${action.tone}`}>{action.label}</div>
@@ -77,7 +85,7 @@ export default function DashboardPage() {
           </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-            <Card className="border border-white/10 bg-white/5 p-6">
+            <Card className="dashboard-overview border border-white/10 bg-white/5 p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.3em] text-white/45">This month</p>
@@ -100,7 +108,7 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card className="border border-white/10 bg-white/5 p-6">
+            <Card className="dashboard-activity border border-white/10 bg-white/5 p-6">
               <p className="text-xs uppercase tracking-[0.3em] text-white/45">Recent activity</p>
               <div className="mt-4 space-y-3 text-sm text-white/75">
                 <div className="rounded-2xl bg-black/20 px-4 py-3">Receipt analyzed and ready to add to dashboard.</div>
@@ -111,6 +119,15 @@ export default function DashboardPage() {
           </section>
         </div>
       </main>
+      <AppTutorial ref={tutorialRef}
+        steps={[
+          { title: 'Quick Actions', description: 'Launch SnapSortAI to scan receipts, ScamShield to check for scams, or Money Coach to review your financial health.', targetSelector: '.dashboard-quick-actions' },
+          { title: 'Monthly Overview', description: 'See your total spending from uploaded receipts and your financial health score at a glance.', targetSelector: '.dashboard-overview' },
+          { title: 'Recent Activity', description: 'Keep track of your latest actions across all SnapGuard features.', targetSelector: '.dashboard-activity' },
+        ]}
+        storageKey="snapguard_tutorial_dashboard"
+        enabled={true}
+      />
     </AuthGuard>
   );
 }

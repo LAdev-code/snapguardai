@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AuthGuard from '../components/AuthGuard';
+import AppTutorial, { type AppTutorialHandle } from '../components/AppTutorial';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { supabase } from '../../lib/supabaseBrowserClient';
@@ -21,6 +22,7 @@ type ScamResult = {
 };
 
 export default function ScamShieldForm() {
+  const tutorialRef = useRef<AppTutorialHandle>(null);
   const [tab, setTab] = useState<'message' | 'image'>('message');
   const [message, setMessage] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -39,6 +41,13 @@ export default function ScamShieldForm() {
   const playedResultRef = useRef<string | null>(null);
   const searchParams = useSearchParams();
   const trialMode = searchParams.get('trial') === '1';
+  const [trialUsed, setTrialUsed] = useState(false);
+
+  useEffect(() => {
+    if (trialMode && typeof window !== 'undefined') {
+      setTrialUsed(localStorage.getItem('snapguard_trial_used') === 'true');
+    }
+  }, [trialMode]);
 
   const score = useMemo(() => {
     const value = Number(result?.riskScore ?? 0);
@@ -205,6 +214,10 @@ export default function ScamShieldForm() {
       const parsed = data?.parsed ?? null;
       setResult(parsed);
       setSavedCase(false);
+      if (trialMode && typeof window !== 'undefined') {
+        localStorage.setItem('snapguard_trial_used', 'true');
+        setTrialUsed(true);
+      }
       setStatus('Scan complete. Review the explanation or report the case.');
 
       if (parsed) {
@@ -306,23 +319,37 @@ export default function ScamShieldForm() {
           <h1 className="mt-3 text-4xl font-semibold tracking-tight">Verify suspicious messages and payment proof.</h1>
           <p className="mt-3 text-sm text-white/70">Use text or image evidence. The scanner returns a risk score, explanation, and recommended action.</p>
           {trialMode ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <span className="inline-flex rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-sky-100">Trial mode</span>
-              <Link href="/login" className="text-sm text-sky-300 underline hover:text-sky-200">Sign in to save reports</Link>
-            </div>
-          ) : null}
+            trialUsed ? (
+              <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-5 py-4">
+                <p className="text-sm font-semibold text-amber-100">Trial used</p>
+                <p className="mt-1 text-sm text-amber-200/80">You've used your free trial. <Link href="/login" className="underline hover:text-amber-100">Sign in</Link> or <Link href="/register" className="underline hover:text-amber-100">create an account</Link> to keep using ScamShield.</p>
+              </div>
+            ) : (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="inline-flex rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-sky-100">Trial mode — 1 scan remaining</span>
+                <Link href="/login" className="text-sm text-sky-300 underline hover:text-sky-200">Sign in to save reports</Link>
+              </div>
+            )
+          ) : (
+            <button
+              onClick={() => tutorialRef.current?.restart()}
+              className="mt-4 inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white/70 transition hover:bg-white/10"
+            >
+              Tutorial
+            </button>
+          )}
         </header>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <Card className="border border-white/10 bg-white/5 p-0">
-            <div className="border-b border-white/10 px-6 py-4">
+            <div className="scamshield-tabs border-b border-white/10 px-6 py-4">
               <div className="flex gap-2">
                 <button onClick={() => setTab('message')} className={`rounded-full px-4 py-2 text-sm ${tab === 'message' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}>Message Check</button>
                 <button onClick={() => setTab('image')} className={`rounded-full px-4 py-2 text-sm ${tab === 'image' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}>Payment Proof</button>
               </div>
             </div>
             <div className="space-y-5 px-6 py-6">
-              <label className="block">
+              <label className="scamshield-input block">
                 <span className="mb-2 block text-sm text-white/70">Message text</span>
                 <textarea
                   value={message}
@@ -355,7 +382,7 @@ export default function ScamShieldForm() {
               {preview ? <img src={preview} alt="ScamShield preview" className="h-56 w-full rounded-2xl object-cover" /> : null}
 
               <div className="flex flex-wrap gap-3">
-                <Button onClick={handleScan} disabled={busy}>{busy ? 'Scanning...' : 'Scan now'}</Button>
+                <Button onClick={handleScan} disabled={busy || (trialMode && trialUsed)}>{busy ? 'Scanning...' : trialMode && trialUsed ? 'Trial used' : 'Scan now'}</Button>
                 <Button variant="secondary" onClick={() => {
                   if (typeof window !== 'undefined') {
                     window.speechSynthesis?.cancel();
@@ -378,7 +405,7 @@ export default function ScamShieldForm() {
           </Card>
 
           <div className="space-y-6">
-            <Card className="border border-white/10 bg-white/5">
+            <Card className="scamshield-risk border border-white/10 bg-white/5">
               <div className="flex items-center justify-between">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/50">Risk</p>
                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${badgeStyleClasses}`}>{badgeText}</span>
@@ -450,7 +477,7 @@ export default function ScamShieldForm() {
               </div>
             </Card>
 
-            <Card className="border border-white/10 bg-white/5">
+            <Card className="scamshield-actions border border-white/10 bg-white/5">
               <p className="text-xs uppercase tracking-[0.3em] text-white/50">Actions</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <Button onClick={reportScam} disabled={reporting}>{reporting ? 'Reporting...' : 'Report Scam'}</Button>
@@ -463,6 +490,16 @@ export default function ScamShieldForm() {
         </div>
       </div>
     </main>
+      <AppTutorial ref={tutorialRef}
+        steps={[
+          { title: 'Choose Check Type', description: 'Switch between Message Check for SMS or WhatsApp text, and Payment Proof for screenshot analysis.', targetSelector: '.scamshield-tabs' },
+          { title: 'Enter Evidence', description: 'Paste suspicious message text or upload a screenshot. OCR will extract text from images automatically.', targetSelector: '.scamshield-input' },
+          { title: 'Risk Score', description: 'Get an instant safety verdict with a risk score out of 100, plus detailed explanations and red flags.', targetSelector: '.scamshield-risk' },
+          { title: 'Take Action', description: 'Report the scam to the community database, contact Bank Negara, or save the case for later review.', targetSelector: '.scamshield-actions' },
+        ]}
+        storageKey="snapguard_tutorial_scamshield"
+        enabled={!trialMode}
+      />
     </AuthGuard>
   );
 }
