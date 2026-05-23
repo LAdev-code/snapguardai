@@ -49,11 +49,12 @@ export default function Page() {
               Start Analysis
             </a>
             <a href="/snapsort?trial=1" className="rounded-full border border-sky-300/20 bg-sky-400/10 px-6 py-3 font-semibold text-sky-100 transition hover:bg-sky-400/20">
-              Try it out
+              Test SnapSortAI
             </a>
-            <a href="/login" className="rounded-full border border-white/15 bg-white/5 px-6 py-3 font-semibold text-white transition hover:bg-white/10">
-              Sign in
+            <a href="/scamshield?trial=1" className="rounded-full border border-amber-300/20 bg-amber-400/10 px-6 py-3 font-semibold text-amber-100 transition hover:bg-amber-400/20">
+              Test ScamShield
             </a>
+
           </div>
 
           <div id="features" className="mt-10 grid gap-4 sm:grid-cols-3">
