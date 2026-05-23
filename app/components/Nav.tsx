@@ -11,6 +11,7 @@ export default function Nav() {
   const pathname = usePathname();
   const [user, setUser] = useState<{ email?: string } | null>(null);
   const [openMenu, setOpenMenu] = useState(false);
+  const brandHref = user ? '/dashboard' : '/';
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
@@ -36,7 +37,7 @@ export default function Nav() {
       <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-slate-950/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
             <div className="flex items-center gap-4">
-            <Link href="/" className="inline-flex items-center gap-3">
+              <Link href={brandHref} className="inline-flex items-center gap-3">
               <Image src="/logo.png" alt="SnapGuard AI" width={40} height={40} />
               <span className="text-lg font-semibold tracking-tight text-white">SnapGuard AI</span>
             </Link>
