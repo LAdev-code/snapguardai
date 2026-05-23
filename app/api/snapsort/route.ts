@@ -7,6 +7,7 @@ type SnapSortPayload = {
   imageBase64?: string;
   imageMimeType?: string;
   fileName?: string;
+  documentType?: string;
 };
 
 function extractJson(text: string) {
@@ -57,32 +58,47 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const parts: Array<Record<string, unknown>> = [];
-  parts.push({ text: `You are SnapGuard AI SnapSortAI, a premium receipt intelligence model specialising in OCR extraction, merchant recognition, and financial categorisation.
+  const documentType = body.documentType?.trim() || 'Auto detect';
 
-Analyse the receipt image or text below and extract all available transaction data. Be meticulous — read every line, including small print, tax breakdowns, and payment method details.
+  const parts: Array<Record<string, unknown>> = [];
+  parts.push({ text: `You are SnapGuard AI SnapSortAI, a premium receipt and invoice intelligence model specialising in OCR extraction, vendor recognition, business invoices, engineering invoices, and financial categorisation.
+
+Analyse the receipt, business invoice, or engineering invoice below and extract all available transaction data. Be meticulous - read every line, including small print, tax breakdowns, payment terms, PO numbers, project names, and payment method details.
+
+Document type hint from the user: ${documentType}
 
 Key Extraction Guidelines:
-1. Merchant: Identify the store/business name exactly as printed. If ambiguous, infer from context (e.g. "MCD" → "McDonald's").
+1. Merchant / Vendor: Identify the store or vendor name exactly as printed. If ambiguous, infer from context (e.g. "MCD" -> "McDonald's").
 2. Transaction Date: Extract in ISO 8601 format (YYYY-MM-DD). If only a partial date is visible, fill missing parts with null.
-3. Currency: Detect the currency symbol or code (MYR, USD, SGD, etc.). Default to MYR for Malaysian receipts.
-4. Total & Tax: Parse numeric values. Remove currency symbols and commas. Use null if not visible.
-5. Category: Classify into one of: Food, Transport, Shopping, Bills, Health, Entertainment, Education, Groceries, Utilities, Other.
-6. Payment Method: Detect from receipt footer — Cash, Card, Touch 'n Go, DuitNow QR, FPX, or null.
-7. Line Items: Extract each item row as {name, quantity, price}. Quantity defaults to 1 if not shown.
-8. Confidence: Score 0–100 indicating how reliable the extraction is. Low confidence when image is blurry, cropped, or text is partially illegible.
-9. Summary: One-sentence financial insight about this purchase (e.g. "Weekly grocery run at AEON — largest expense this week in Groceries.").
+3. Document Type: Set to receipt, invoice, business_invoice, engineering_invoice, or other when the document clearly matches that type.
+4. Invoice Number / PO: Extract invoice number, purchase order number, or reference number when present.
+5. Currency: Detect the currency symbol or code (MYR, USD, SGD, etc.). Default to MYR for Malaysian documents.
+6. Subtotal / Tax / Total: Parse numeric values. Remove currency symbols and commas. Use null if not visible. For invoices, amountDue may be the final payable amount.
+7. Category: Classify into one of: Food, Transport, Shopping, Bills, Health, Entertainment, Education, Groceries, Utilities, Services, Engineering, Business, Other.
+8. Payment Method: Detect from footer or terms — Cash, Card, Touch 'n Go, DuitNow QR, FPX, Bank Transfer, or null.
+9. Project Name: Extract project, site, or client name when visible, especially for engineering or business invoices.
+10. Line Items: Extract each line item as {name, quantity, price}. Quantity defaults to 1 if not shown.
+11. Confidence: Score 0-100 indicating how reliable the extraction is. Low confidence when the image is blurry, cropped, or text is partially illegible.
+12. Summary: One-sentence financial insight about this purchase or invoice.
 
 User-provided notes for additional context: ${body.text ?? 'None provided'}
 
 Return a strict JSON object with the following keys:
+- documentType: string or null
 - merchant: string or null
+- vendorName: string or null
+- invoiceNumber: string or null
+- dueDate: string or null
 - transactionDate: string (YYYY-MM-DD) or null
 - currency: string or null
+- subtotal: number or null
 - total: number or null
+- amountDue: number or null
 - tax: number or null
 - category: string or null
 - paymentMethod: string or null
+- projectName: string or null
+- purchaseOrderNumber: string or null
 - items: array of {name: string, quantity: number, price: number} or empty array
 - confidence: number (0–100) or null
 - summary: string or null

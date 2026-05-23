@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseBrowserClient';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const [loading, setLoading] = useState(true);
+  const [checking, setChecking] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -14,12 +15,24 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       if (!data.session) {
         router.replace('/login');
       } else {
-        setLoading(false);
+        setAuthorized(true);
       }
+    }).catch(() => {
+      if (mounted) router.replace('/login');
+    }).finally(() => {
+      if (mounted) setChecking(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) router.replace('/login');
+      if (!mounted) return;
+
+      if (!session) {
+        setAuthorized(false);
+        router.replace('/login');
+      } else {
+        setAuthorized(true);
+        setChecking(false);
+      }
     });
 
     return () => {
@@ -28,6 +41,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (checking) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!authorized) return null;
   return <>{children}</>;
 }

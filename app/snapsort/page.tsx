@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
@@ -9,13 +10,21 @@ import { getSupabaseAuthHeaders } from '../../lib/authHeaders';
 import { fileToDataUrl, pdfPageToImageDataUrl, recognizeImageText, stripDataUrlPrefix } from '../../lib/fileHelpers';
 
 type ReceiptResult = {
+  documentType?: string | null;
   merchant?: string | null;
+  vendorName?: string | null;
+  invoiceNumber?: string | null;
+  dueDate?: string | null;
   transactionDate?: string | null;
   currency?: string | null;
+  subtotal?: number | string | null;
   total?: number | string | null;
+  amountDue?: number | string | null;
   tax?: number | string | null;
   category?: string | null;
   paymentMethod?: string | null;
+  projectName?: string | null;
+  purchaseOrderNumber?: string | null;
   items?: Array<{ name?: string; quantity?: number; price?: number }>;
   confidence?: number | string | null;
   summary?: string | null;
@@ -29,11 +38,111 @@ type SavedReceipt = {
   currency: string | null;
   category: string | null;
   transaction_date: string | null;
+  items?: Array<{ name?: string; quantity?: number; price?: number }>;
 };
 
 type CategoryBreakdown = { label: string; value: number; color: string };
+type HistoryFilter = 'all' | 'food' | 'transport' | 'shopping' | 'bills' | 'utilities' | 'other';
 
-const CHART_COLORS = ['#7dd3fc', '#34d399', '#fbbf24', '#fb7185'];
+const CHART_COLORS = ['#7dd3fc', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#38bdf8'];
+const DOCUMENT_TYPES = [
+  'Auto detect',
+  'Receipt',
+  'Invoice',
+  'Business invoice',
+  'Engineering invoice',
+];
+
+const CATEGORY_RULES: Array<{ label: string; keywords: string[] }> = [
+  { label: 'Food', keywords: ['food', 'meal', 'restaurant', 'cafe', 'coffee', 'grocery', 'groceries', 'market', 'bakery'] },
+  { label: 'Transport', keywords: ['transport', 'fuel', 'petrol', 'parking', 'taxi', 'grab', 'toll', 'lrt', 'mrt', 'bus', 'ride'] },
+  { label: 'Bills', keywords: ['bill', 'invoice', 'rent', 'utility', 'utilities', 'water', 'electric', 'electricity', 'internet', 'phone', 'subscription'] },
+  { label: 'Engineering', keywords: ['engineering', 'construction', 'site', 'labour', 'labor', 'material', 'materials', 'concrete', 'steel', 'supply'] },
+  { label: 'Services', keywords: ['service', 'services', 'consulting', 'maintenance', 'repair', 'professional', 'support', 'installation'] },
+  { label: 'Business', keywords: ['business', 'office', 'corporate', 'project', 'client', 'vendor', 'purchase order', 'po'] },
+  { label: 'Shopping', keywords: ['shopping', 'retail', 'mall', 'boutique', 'store', 'supermarket', 'marketplace'] },
+  { label: 'Health', keywords: ['health', 'clinic', 'pharmacy', 'medical', 'hospital', 'medicine'] },
+  { label: 'Education', keywords: ['education', 'school', 'college', 'university', 'tuition', 'training'] },
+  { label: 'Entertainment', keywords: ['entertainment', 'movie', 'cinema', 'subscription', 'game', 'concert'] },
+];
+
+const FALLBACK_BREAKDOWN: CategoryBreakdown[] = [
+  { label: 'Food', value: 38, color: CHART_COLORS[0] },
+  { label: 'Transport', value: 26, color: CHART_COLORS[1] },
+  { label: 'Shopping', value: 20, color: CHART_COLORS[2] },
+  { label: 'Bills', value: 16, color: CHART_COLORS[3] },
+];
+
+function formatMoneyValue(currency: string | null | undefined, value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === '') return '—';
+  return `${currency ?? ''} ${value}`.trim();
+}
+
+function normalizeCategory(category: string | null | undefined) {
+  return (category ?? 'Other').toLowerCase();
+}
+
+function inferCategoryFromText(text: string, documentType?: string | null) {
+  const normalized = text.toLowerCase();
+
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.some((keyword) => normalized.includes(keyword))) {
+      return rule.label;
+    }
+  }
+
+  if ((documentType ?? '').toLowerCase().includes('engineering')) return 'Engineering';
+  if ((documentType ?? '').toLowerCase().includes('business')) return 'Business';
+  if ((documentType ?? '').toLowerCase().includes('invoice')) return 'Services';
+
+  return 'Other';
+}
+
+function buildInvoiceBreakdown(result: ReceiptResult | null): CategoryBreakdown[] {
+  if (!result) return FALLBACK_BREAKDOWN;
+
+  const buckets = new Map<string, number>();
+  const items = result.items ?? [];
+  const itemValues = items.map((item) => {
+    const quantity = Number(item.quantity ?? 1) || 1;
+    const price = Number(item.price ?? 0) || 0;
+    const amount = price > 0 ? price * quantity : 1;
+    return {
+      label: inferCategoryFromText(item.name ?? '', result.documentType),
+      amount,
+    };
+  });
+
+  if (itemValues.length > 0) {
+    itemValues.forEach(({ label, amount }) => {
+      buckets.set(label, (buckets.get(label) ?? 0) + amount);
+    });
+  } else {
+    const label = inferCategoryFromText([
+      result.documentType,
+      result.category,
+      result.merchant,
+      result.vendorName,
+      result.projectName,
+      result.invoiceNumber,
+      result.purchaseOrderNumber,
+    ].filter(Boolean).join(' '), result.documentType);
+
+    buckets.set(label === 'Other' ? (result.category ?? 'Other') : label, Number(result.amountDue ?? result.total ?? result.subtotal ?? 1) || 1);
+  }
+
+  const entries = Array.from(buckets.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+
+  const total = entries.reduce((sum, [, amount]) => sum + amount, 0) || 1;
+
+  return entries.map(([label, amount], index) => ({
+    label,
+    value: Math.max(1, Math.round((amount / total) * 100)),
+    color: CHART_COLORS[index % CHART_COLORS.length],
+  }));
+}
 
 export default function SnapSortPage() {
   const [notes, setNotes] = useState('');
@@ -45,14 +154,11 @@ export default function SnapSortPage() {
   const [dragging, setDragging] = useState(false);
   const [saved, setSaved] = useState(false);
   const [processingStep, setProcessingStep] = useState('Waiting for upload');
-  const [breakdown, setBreakdown] = useState<CategoryBreakdown[]>([
-    { label: 'Food', value: 38, color: CHART_COLORS[0] },
-    { label: 'Transport', value: 22, color: CHART_COLORS[1] },
-    { label: 'Shopping', value: 18, color: CHART_COLORS[2] },
-    { label: 'Bills', value: 22, color: CHART_COLORS[3] },
-  ]);
+  const [documentType, setDocumentType] = useState('Auto detect');
   const [history, setHistory] = useState<SavedReceipt[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyCategory, setHistoryCategory] = useState<HistoryFilter>('all');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
@@ -71,7 +177,7 @@ export default function SnapSortPage() {
 
       const { data, error } = await supabase
         .from('receipts_data')
-        .select('id, created_at, merchant, total_amount, currency, category, transaction_date')
+        .select('id, created_at, merchant, total_amount, currency, category, transaction_date, items')
         .eq('user_id', user.user.id)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -90,17 +196,23 @@ export default function SnapSortPage() {
     fetchHistory();
   }, [fetchHistory]);
 
-  const insight = result?.summary ?? 'You spent more in one category than the rest this week. Receipt data is automatically synced to Money Coach.';
+  const filteredHistory = useMemo(() => {
+    const query = historyQuery.trim().toLowerCase();
+    return history.filter((entry) => {
+      const matchesQuery = !query
+        || [entry.merchant, entry.category, String(entry.total_amount ?? '')]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(query);
+      const matchesCategory = historyCategory === 'all' || normalizeCategory(entry.category).includes(historyCategory);
+      return matchesQuery && matchesCategory;
+    });
+  }, [history, historyCategory, historyQuery]);
 
-  function applyBreakdown() {
-    const labels = ['Food', 'Transport', 'Shopping', 'Bills'];
-    const weights = [34, 26, 20, 20];
-    setBreakdown(labels.map((label, index) => ({
-      label,
-      value: weights[index],
-      color: CHART_COLORS[index],
-    })));
-  }
+  const invoiceTypeLabel = result?.documentType ?? documentType;
+  const breakdown = useMemo(() => buildInvoiceBreakdown(result), [result]);
+  const insight = result?.summary ?? 'You spent more in one category than the rest this week. Receipt and invoice data is automatically synced to Money Coach.';
 
   function selectFile(nextFile: File | null) {
     setFile(nextFile);
@@ -181,7 +293,7 @@ export default function SnapSortPage() {
       const response = await fetch('/api/snapsort', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ text: textPayload }),
+        body: JSON.stringify({ text: textPayload, documentType }),
       });
 
       const data = await response.json().catch(() => null);
@@ -197,7 +309,6 @@ export default function SnapSortPage() {
 
       const parsed = data?.parsed ?? null;
       setResult(parsed);
-      applyBreakdown();
 
       // Auto-save to receipts_data so MoneyCoach picks it up
       await saveReceiptToDashboard(parsed);
@@ -211,23 +322,42 @@ export default function SnapSortPage() {
     }
   }
 
+  function openScamShield() {
+    window.location.href = '/scamshield';
+  }
+
+  function openMoneyCoach() {
+    window.location.href = '/moneycoach';
+  }
+
   return (
     <AuthGuard>
-      <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(94,125,229,0.12),_transparent_36%),linear-gradient(180deg,_rgba(7,10,18,0.98),_rgba(12,14,24,1))] text-white">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          <header className="max-w-2xl">
-            <p className="text-xs uppercase tracking-[0.3em] text-white/50">SnapSortAI</p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Turn receipts into organized spending records.</h1>
-            <p className="mt-3 text-sm text-white/70">Drag and drop a receipt or use your camera. We extract merchant data and automatically sync it to Money Coach.</p>
+      <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(36,160,219,0.2),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(45,212,191,0.14),transparent_24%),linear-gradient(180deg,#07111f_0%,#0b1d34_52%,#08111d_100%)] text-slate-100">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <header className="max-w-3xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-200/70">SnapSortAI</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">Turn receipts and invoices into organized spending records.</h1>
+            <p className="mt-3 text-sm text-slate-300">Use SnapSortAI for normal receipts, business invoices, and engineering invoices. We extract the full document, save it to Supabase, and sync the totals to Money Coach.</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href="/scamshield" className="inline-flex items-center rounded-full border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20">
+                Check scam risk
+              </Link>
+              <Link href="/moneycoach" className="inline-flex items-center rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20">
+                Open Money Coach
+              </Link>
+            </div>
           </header>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-[1.3fr_0.9fr]">
-            <Card className="border border-white/10 bg-white/5 p-0">
-              <div className="border-b border-white/10 px-6 py-4">
-                <h2 className="text-lg font-semibold">Receipt upload</h2>
-                <p className="text-sm text-white/60">Receipt OCR with auto-save to Money Coach.</p>
+          <div className="mt-8 grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
+            <Card className="border border-white/10 bg-slate-950/70 p-0 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
+              <div className="border-b border-white/10 px-6 py-5">
+                <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-cyan-100">
+                  Secure AI Processing
+                </div>
+                <h2 className="mt-4 text-3xl font-semibold text-white">Analyzing Receipt</h2>
+                <p className="mt-2 max-w-2xl text-sm text-slate-300">Gemini 2.5 Flash is reading line items, totals, tax, invoice numbers, and business details with a glacier-style trust banner.</p>
               </div>
-              <div className="space-y-5 px-6 py-6">
+              <div className="space-y-6 px-6 py-6">
                 <div
                   role="button"
                   tabIndex={0}
@@ -243,14 +373,14 @@ export default function SnapSortPage() {
                     setDragging(false);
                     selectFile(event.dataTransfer.files?.[0] ?? null);
                   }}
-                  className={`rounded-3xl border border-dashed p-6 text-sm transition ${dragging ? 'border-sky-300 bg-sky-400/10' : 'border-white/20 bg-black/20'}`}
+                  className={`rounded-3xl border border-dashed p-6 text-sm transition ${dragging ? 'border-sky-300 bg-sky-400/15' : 'border-white/15 bg-white/5'}`}
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-lg font-semibold text-white">Drop receipt here</p>
-                      <p className="mt-1 text-white/60">PNG, JPG, PDF, or a camera capture.</p>
+                      <p className="text-lg font-semibold text-white">Drop receipt or invoice here</p>
+                      <p className="mt-1 text-slate-300">PNG, JPG, WEBP, or PDF. Business and engineering invoices are supported.</p>
                     </div>
-                    <div className="rounded-2xl bg-white/10 px-4 py-2 text-white">Tap to open picker</div>
+                    <div className="rounded-2xl bg-sky-400/15 px-4 py-2 text-sky-100">Tap to open picker</div>
                   </div>
                   <input
                     ref={inputRef}
@@ -276,15 +406,18 @@ export default function SnapSortPage() {
                 ) : null}
 
                 {loading ? (
-                  <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-sky-300" />
+                  <div className="rounded-[1.75rem] border border-cyan-300/20 bg-[linear-gradient(180deg,rgba(45,212,191,0.12),rgba(56,189,248,0.12))] p-6 shadow-[0_20px_50px_rgba(8,15,28,0.45)]">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/60">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-200/25 border-t-cyan-200" />
+                      </div>
                       <div>
-                        <p className="font-semibold text-white">Processing receipt</p>
-                        <p className="text-sm text-white/60">{processingStep}</p>
+                        <p className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-100/70">Secure AI Processing</p>
+                        <p className="mt-1 text-2xl font-semibold text-white">Analyzing Receipt</p>
+                        <p className="mt-1 text-sm text-slate-200">{processingStep}</p>
                       </div>
                     </div>
-                    <div className="mt-4 space-y-2">
+                    <div className="mt-5 space-y-3">
                       <div className="h-3 w-full animate-pulse rounded-full bg-white/10" />
                       <div className="h-3 w-5/6 animate-pulse rounded-full bg-white/10" />
                       <div className="h-3 w-2/3 animate-pulse rounded-full bg-white/10" />
@@ -293,12 +426,29 @@ export default function SnapSortPage() {
                 ) : null}
 
                 <label className="block">
-                  <span className="mb-2 block text-sm text-white/70">OCR text or notes</span>
+                  <span className="mb-2 block text-sm text-slate-200">Document type</span>
+                  <select
+                    value={documentType}
+                    onChange={(event) => setDocumentType(event.target.value)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none focus:border-sky-300"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    {DOCUMENT_TYPES.map((type) => (
+                      <option key={type} value={type} className="bg-slate-950 text-white">
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-sm text-slate-400">Auto detect routes simple receipts to the fast model and business or engineering invoices to the same secure parser with richer invoice extraction.</p>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm text-slate-200">OCR text or notes</span>
                   <textarea
                     value={notes}
                     onChange={(event) => setNotes(event.target.value)}
                     rows={6}
-                    className="w-full rounded-2xl border border-white/10 bg-black/20 p-4 text-sm outline-none placeholder:text-white/30"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white outline-none placeholder:text-slate-500"
                     placeholder="Add notes about the purchase or paste additional receipt text."
                   />
                 </label>
@@ -316,6 +466,8 @@ export default function SnapSortPage() {
                   }}>
                     Reset
                   </Button>
+                  <Button variant="secondary" onClick={openScamShield}>Check scam risk</Button>
+                  <Button variant="secondary" onClick={openMoneyCoach}>Open Money Coach</Button>
                 </div>
 
                 <p className={`text-sm ${saving ? 'text-emerald-300' : 'text-white/60'}`}>{status}</p>
@@ -323,21 +475,44 @@ export default function SnapSortPage() {
             </Card>
 
             <div className="space-y-6">
-              <Card className="border border-white/10 bg-white/5">
+              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/50">Receipt data</p>
+                  <p className="text-xs uppercase tracking-[0.3em] text-sky-100/70">Invoice preview</p>
                   <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">{result ? 'Ready' : 'Awaiting scan'}</span>
                 </div>
-                <div className="mt-4 grid gap-3 text-sm text-white/75">
-                  <div className="rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/45">Merchant:</span> {result?.merchant ?? 'Waiting for scan'}</div>
-                  <div className="rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/45">Date:</span> {result?.transactionDate ?? '—'}</div>
-                  <div className="rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/45">Total:</span> {result?.currency ? `${result.currency} ` : ''}{result?.total ?? '—'}</div>
-                  <div className="rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/45">Category:</span> {result?.category ?? '—'}</div>
-                  <div className="rounded-2xl bg-black/20 px-4 py-3"><span className="text-white/45">Confidence:</span> {result?.confidence ?? '—'}</div>
+                <div className="mt-4 grid gap-3 text-sm text-slate-200">
+                  <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Document type:</span> {invoiceTypeLabel}</div>
+                  <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Merchant / vendor:</span> {result?.vendorName ?? result?.merchant ?? 'Waiting for scan'}</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Date:</span> {result?.transactionDate ?? '—'}</div>
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Due date:</span> {result?.dueDate ?? '—'}</div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Subtotal:</span> {formatMoneyValue(result?.currency, result?.subtotal ?? null)}</div>
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Tax:</span> {formatMoneyValue(result?.currency, result?.tax ?? null)}</div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Total / amount due:</span> {formatMoneyValue(result?.currency, result?.amountDue ?? result?.total ?? null)}</div>
+                    <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Confidence:</span> {result?.confidence ?? '—'}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Category:</span> {result?.category ?? '—'}</div>
+                  <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Invoice / PO:</span> {result?.invoiceNumber ?? result?.purchaseOrderNumber ?? '—'}</div>
+                  <div className="rounded-2xl bg-white/5 px-4 py-3"><span className="text-slate-400">Project:</span> {result?.projectName ?? '—'}</div>
+                </div>
+                <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-xs uppercase tracking-[0.28em] text-sky-100/70">Line items</p>
+                  <div className="mt-4 space-y-2 text-sm text-slate-200">
+                    {(result?.items?.length ?? 0) > 0 ? result?.items?.map((item, index) => (
+                      <div key={`${item?.name ?? 'item'}-${index}`} className="flex items-center justify-between rounded-2xl bg-black/20 px-4 py-3">
+                        <span className="truncate pr-3">{item?.name ?? 'Item'}</span>
+                        <span className="shrink-0 text-slate-300">{item?.quantity ?? 1} x {item?.price ?? '—'}</span>
+                      </div>
+                    )) : <p className="text-slate-400">The extracted line items will appear here immediately after analysis.</p>}
+                  </div>
                 </div>
               </Card>
 
-              <Card className="border border-white/10 bg-white/5">
+              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
                 <p className="text-xs uppercase tracking-[0.3em] text-white/50">Category chart</p>
                 <div className="mt-4 flex items-center gap-6">
                   <div className="relative h-40 w-40 rounded-full" style={{
@@ -362,7 +537,7 @@ export default function SnapSortPage() {
                     ))}
                   </div>
                 </div>
-                <div className="mt-4 space-y-2 text-sm text-white/75">
+                <div className="mt-4 space-y-2 text-sm text-slate-200">
                   {(result?.items?.length ?? 0) > 0 ? result?.items?.map((item, index) => (
                     <div key={`${item?.name ?? 'item'}-${index}`} className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2">
                       <span>{item?.name ?? 'Item'}</span>
@@ -372,12 +547,12 @@ export default function SnapSortPage() {
                 </div>
               </Card>
 
-              <Card className="border border-amber-300/20 bg-amber-300/10">
-                <p className="text-xs uppercase tracking-[0.3em] text-amber-100/75">AI insight</p>
+              <Card className="border border-cyan-300/20 bg-cyan-300/10">
+                <p className="text-xs uppercase tracking-[0.3em] text-cyan-100/75">AI insight</p>
                 <p className="mt-3 text-sm leading-7 text-white">{insight}</p>
               </Card>
 
-              <Card className="border border-white/10 bg-white/5">
+              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.3em] text-white/50">Recent scans</p>
                   <a href="/snapsort/history" className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70 hover:bg-white/20">View all ({history.length})</a>
@@ -401,8 +576,8 @@ export default function SnapSortPage() {
                             currency: entry.currency,
                             category: entry.category,
                             transactionDate: entry.transaction_date,
+                            items: entry.items ?? [],
                           });
-                          applyBreakdown();
                           setStatus(`Loaded ${entry.merchant ?? 'receipt'} from history.`);
                         }}
                         className="w-full rounded-2xl bg-black/20 px-4 py-3 text-left transition hover:bg-black/40"
@@ -418,6 +593,89 @@ export default function SnapSortPage() {
                       </button>
                     ))
                   )}
+                </div>
+              </Card>
+
+              <Card className="border border-white/10 bg-slate-950/65 shadow-[0_18px_45px_rgba(8,15,28,0.45)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-sky-100/70">Receipt history</p>
+                    <h3 className="mt-2 text-lg font-semibold text-white">Search and filter invoices</h3>
+                  </div>
+                  <Link href="/snapsort/history" className="rounded-full border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/20">
+                    Open full history
+                  </Link>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-[1.6fr_0.8fr]">
+                  <input
+                    value={historyQuery}
+                    onChange={(event) => setHistoryQuery(event.target.value)}
+                    placeholder="Search by merchant, amount, or category..."
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                  />
+                  <select
+                    value={historyCategory}
+                    onChange={(event) => setHistoryCategory(event.target.value as HistoryFilter)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    <option value="all" className="bg-slate-950 text-white">All categories</option>
+                    <option value="food" className="bg-slate-950 text-white">Food</option>
+                    <option value="transport" className="bg-slate-950 text-white">Transport</option>
+                    <option value="shopping" className="bg-slate-950 text-white">Shopping</option>
+                    <option value="bills" className="bg-slate-950 text-white">Bills</option>
+                    <option value="utilities" className="bg-slate-950 text-white">Utilities</option>
+                    <option value="other" className="bg-slate-950 text-white">Other</option>
+                  </select>
+                </div>
+
+                <div className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/10">
+                  <div className="grid grid-cols-[1.1fr_1.4fr_0.8fr_0.8fr_0.7fr] gap-3 bg-black/30 px-4 py-4 text-xs uppercase tracking-[0.28em] text-slate-300">
+                    <span>Date</span>
+                    <span>Description</span>
+                    <span>Amount</span>
+                    <span>Category</span>
+                    <span>Actions</span>
+                  </div>
+                  <div className="divide-y divide-white/10 bg-white/5">
+                    {historyLoading ? (
+                      <div className="px-4 py-8 text-center text-sm text-slate-300">Loading history...</div>
+                    ) : filteredHistory.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-slate-300">No matching receipts found.</div>
+                    ) : filteredHistory.map((entry) => (
+                      <div key={entry.id} className="grid grid-cols-[1.1fr_1.4fr_0.8fr_0.8fr_0.7fr] gap-3 px-4 py-4 text-sm text-slate-200">
+                        <span>{entry.transaction_date ?? '—'}</span>
+                        <span className="truncate font-medium text-white">{entry.merchant ?? 'Unknown merchant'}</span>
+                        <span>{formatMoneyValue(entry.currency, entry.total_amount)}</span>
+                        <span>{entry.category ?? '—'}</span>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => {
+                              setResult({
+                                merchant: entry.merchant,
+                                total: entry.total_amount,
+                                currency: entry.currency,
+                                category: entry.category,
+                                transactionDate: entry.transaction_date,
+                                items: entry.items ?? [],
+                              });
+                              setStatus(`Loaded ${entry.merchant ?? 'receipt'} into the invoice preview.`);
+                            }}
+                            className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200 hover:bg-white/20"
+                          >
+                            Preview
+                          </button>
+                          <button
+                            onClick={() => { window.location.href = '/snapsort/history'; }}
+                            className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
+                          >
+                            History
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </Card>
             </div>
