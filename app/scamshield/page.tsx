@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import AuthGuard from '../components/AuthGuard';
@@ -31,6 +31,10 @@ export default function ScamShieldPage() {
   const [speaking, setSpeaking] = useState(false);
   const [communityCount, setCommunityCount] = useState<number | null>(null);
   const [loadingIntel, setLoadingIntel] = useState(false);
+  const [soundAutoplayEnabled, setSoundAutoplayEnabled] = useState<boolean | null>(null);
+  const [showSoundPrompt, setShowSoundPrompt] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playedResultRef = useRef<string | null>(null);
 
   const score = useMemo(() => {
     const value = Number(result?.riskScore ?? 0);
@@ -51,6 +55,63 @@ export default function ScamShieldPage() {
     : normalizedLevel === 'medium'
       ? 'bg-amber-400/15 text-amber-100 border-amber-300/20'
       : 'bg-rose-400/15 text-rose-100 border-rose-300/20';
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const storedPreference = window.localStorage.getItem('scamshield_sound_autoplay');
+    if (storedPreference === null) {
+      setShowSoundPrompt(true);
+      return;
+    }
+
+    setSoundAutoplayEnabled(storedPreference === 'true');
+  }, []);
+
+  useEffect(() => {
+    if (!result || soundAutoplayEnabled !== true) {
+      playedResultRef.current = null;
+      return;
+    }
+
+    const soundKey = `${normalizedLevel}:${score}`;
+    if (playedResultRef.current === soundKey) return;
+
+    let soundUrl: string | null = null;
+    if (normalizedLevel === 'low') {
+      soundUrl = '/assets/sound/safe.mp3';
+    } else if (normalizedLevel === 'high') {
+      soundUrl = '/assets/sound/scam.mp3';
+    }
+
+    playedResultRef.current = soundKey;
+
+    if (!soundUrl) return;
+
+    audioRef.current?.pause();
+    const audio = new Audio(soundUrl);
+    audioRef.current = audio;
+
+    void audio.play().catch(() => {
+      // Autoplay can be blocked by the browser; keep the UI working without sound.
+    });
+  }, [normalizedLevel, result, score, soundAutoplayEnabled]);
+
+  function chooseSoundAutoplay(enabled: boolean) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('scamshield_sound_autoplay', String(enabled));
+    }
+
+    setSoundAutoplayEnabled(enabled);
+    setShowSoundPrompt(false);
+  }
 
   function toggleSpeech() {
     if (typeof window === 'undefined') return;
@@ -108,6 +169,7 @@ export default function ScamShieldPage() {
     setBusy(true);
     setStatus('Scanning...');
     setCommunityCount(null);
+    audioRef.current?.pause();
 
     try {
       let textPayload = message.trim();
@@ -215,7 +277,22 @@ export default function ScamShieldPage() {
 
   return (
     <AuthGuard>
-      <main className="min-h-screen bg-[linear-gradient(180deg,_rgba(5,8,16,1),_rgba(10,13,23,1))] text-white">
+      <main className="min-h-screen bg-[linear-gradient(180deg,rgba(5,8,16,1),rgba(10,13,23,1))] text-white">
+        {showSoundPrompt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-6 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-4xl border border-white/10 bg-slate-950 p-6 shadow-2xl shadow-black/40">
+              <p className="text-xs uppercase tracking-[0.3em] text-white/45">ScamShield sound</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">Play result sound automatically?</h2>
+              <p className="mt-3 text-sm leading-7 text-white/70">
+                If enabled, ScamShield will play an alert sound for high-risk results and a safe sound for low-risk results after you click Scan now.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button onClick={() => chooseSoundAutoplay(true)}>Yes, enable sound</Button>
+                <Button variant="secondary" onClick={() => chooseSoundAutoplay(false)}>No, keep it silent</Button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="mx-auto max-w-6xl px-6 py-10">
           <header className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.3em] text-white/50">ScamShield</p>
@@ -276,6 +353,9 @@ export default function ScamShieldPage() {
                     setPreview('');
                     setResult(null);
                     setCommunityCount(null);
+                    playedResultRef.current = null;
+                    audioRef.current?.pause();
+                    audioRef.current = null;
                     setStatus('Cleared.');
                   }}>Reset</Button>
                 </div>

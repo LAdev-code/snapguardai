@@ -181,7 +181,7 @@ export default function MoneyCoachPage() {
 
   return (
     <AuthGuard>
-      <main className="min-h-screen bg-[linear-gradient(180deg,_rgba(6,10,16,1),_rgba(8,12,20,1))] text-white">
+      <main className="min-h-screen bg-[linear-gradient(180deg,rgba(6,10,16,1),rgba(8,12,20,1))] text-white">
         <div className="mx-auto max-w-6xl px-6 py-10">
           <header className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.3em] text-white/50">Money Coach</p>
@@ -251,7 +251,7 @@ export default function MoneyCoachPage() {
                         <span>{entry.value}</span>
                       </div>
                       <div className="h-3 rounded-full bg-white/10">
-                        <div className="h-3 rounded-full bg-[linear-gradient(90deg,_#7dd3fc,_#34d399)]" style={{ width: `${entry.value}%` }} />
+                        <div className="h-3 rounded-full bg-[linear-gradient(90deg,#7dd3fc,#34d399)]" style={{ width: `${entry.value}%` }} />
                       </div>
                     </div>
                   ))}
@@ -291,7 +291,7 @@ export default function MoneyCoachPage() {
                     {aiSuggestions.suggestions.map((s, i) => (
                       <div key={i} className="flex gap-3 rounded-xl bg-black/20 px-4 py-3">
                         <span className="mt-0.5 text-sky-300">{i + 1}.</span>
-                        <span>{s}</span>
+                        <span>{typeof s === 'string' ? s : JSON.stringify(s)}</span>
                       </div>
                     ))}
                   </div>

@@ -2,6 +2,36 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { callGemini } from '../../../lib/geminiClient';
 
+type RawMoneyCoachSuggestion = string | { tip?: unknown; details?: unknown; [key: string]: unknown };
+
+function stringifySuggestion(item: RawMoneyCoachSuggestion): string {
+  if (typeof item === 'string') return item;
+
+  const tip = typeof item.tip === 'string' ? item.tip.trim() : '';
+  const details = typeof item.details === 'string' ? item.details.trim() : '';
+
+  if (tip && details) return `${tip}: ${details}`;
+  if (tip) return tip;
+  if (details) return details;
+
+  return JSON.stringify(item);
+}
+
+function normalizeMoneyCoachParsed(parsed: unknown) {
+  const source = (parsed && typeof parsed === 'object') ? parsed as Record<string, unknown> : {};
+  const suggestions = Array.isArray(source.suggestions)
+    ? source.suggestions.map((item) => stringifySuggestion(item as RawMoneyCoachSuggestion))
+    : [];
+
+  return {
+    summary: typeof source.summary === 'string' ? source.summary : '',
+    suggestions,
+    goalFeasibility: typeof source.goalFeasibility === 'string' ? source.goalFeasibility : 'needs_adjustment',
+    adjustedGoal: typeof source.adjustedGoal === 'number' ? source.adjustedGoal : null,
+    riskNote: typeof source.riskNote === 'string' ? source.riskNote : '',
+  };
+}
+
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as {
     income?: number;
@@ -87,7 +117,7 @@ Return ONLY valid JSON, no markdown formatting.`,
 
     const data = JSON.parse(bodyText || '{}');
     const text = data?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? '').join('') ?? '';
-    const parsed = text ? JSON.parse(text) : null;
+    const parsed = text ? normalizeMoneyCoachParsed(JSON.parse(text)) : null;
 
     return NextResponse.json({ parsed });
   } catch (err) {
