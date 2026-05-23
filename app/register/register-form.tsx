@@ -24,10 +24,25 @@ export default function RegisterForm() {
     setMessage(null);
     const { data, error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
-    if (error) return setError(error.message);
+    if (error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('already registered') || msg.includes('already in use') || msg.includes('exists')) {
+        return setError('This email has been used. Please proceed to sign in.');
+      }
+      return setError(error.message);
+    }
     if (data.session) {
       router.replace(nextPath);
       return;
+    }
+
+    // No session — user may be new (needs confirmation) or already exists
+    // Try signing in to tell the difference
+    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+    if (!signInErr) {
+      // Credentials work — user already existed
+      await supabase.auth.signOut();
+      return setError('This email has been used. Please proceed to sign in.');
     }
 
     setMessage('Check your email to confirm your account, then sign in.');
